@@ -1,0 +1,189 @@
+I2C for DS90Ux9xx FPD-Link III devices
+
+Current Status :
+This driver is currently in development and this list of bindings is
+expected to change frequently. Not all capabilities are implemented yet.
+Todo:
+- Add i2c address remapping for remote devices.
+- Add PDB toggling during initialization to register multiple links on the
+  same i2c bus.
+- Add V4L drivers for various video interfaces.
+
+Compatible Types:
+- <mfg>,ds90ub925q
+- <mfg>,ds90uh925q
+- <mfg>,ds90ub927q
+- <mfg>,ds90uh927q
+- <mfg>,ds90ub929q
+- <mfg>,ds90uh929q
+- <mfg>,ds90ub941q
+- <mfg>,ds90uh941q
+- <mfg>,ds90ub949q
+- <mfg>,ds90uh949q
+- <mfg>,ds90ub926q
+- <mfg>,ds90uh926q
+- <mfg>,ds90ub928q
+- <mfg>,ds90uh928q
+- <mfg>,ds90ub940q
+- <mfg>,ds90uh940q
+- <mfg>,ds90ub948q
+- <mfg>,ds90uh948q
+- <mfg>,ds90u-auto
+- ti,ds90u
+- national,ds90u
+
+Note: This driver aims to be compatible with any of the DS90Ux9xx devices
+but the register map has only been confirmed against the devices listed above.
+
+Required properties :
+- compatible : Should be one of the specific chips listed above. <mfg> field
+  is ignored for most of them. The others use autodetection to determine the
+  chip type, but this only works for local devices and cannot usually detect
+  the device type for the remote device.
+- reg : i2c address of the device
+- #address-cells = <1>; -- needed if any child nodes are present
+- #size-cells = <0>; -- needed if any child nodes are present
+- #gpio-cells = <2>; -- needed if gpio-controller is specified
+
+Recommended properties :
+- pdb-gpio : GPO pin used to toggle the chip low-power state. This is only
+  recommended for the locally-connected device.
+- lock-gpio : GPI pin used to detect hot lock/unlock. For a deserializer,
+  this is connected to the LOCK pin. For a serializer, this is connected to
+  the INTB pin. This is only recommended for the locally-connected device.
+
+Note: When hot lock/unlock is detected, child nodes will be registered or
+unregistered, triggering driver probe/remove functions.
+
+Optional properties :
+- gpio-controller : Configures the driver as a gpio controller. This will allow
+  other device nodes to reference the gpio pins as well as export them to
+  userspace. Note that these GPIOs will be used in registered mode (via i2c
+  commands) even the GPIOs that are normally not registered.
+- i2c-address-map : List of i2c slave Alias/ID pairs to be passed-through.
+  Most models support up to 8 mappings, but the 925 appears to onlys support 1.
+  Note that the first entry in each pair is the i2c slave address that you
+  want to use for the device and the second entry is the value that it will
+  be translated to on the remote end (the device's native slave address).
+- i2c-promiscuous-mode : Put the device into I2C Pass-through All mode.
+  This option is not recommended.
+- scl-pulse-width : Value to be used for the I2C SCL high-time and low-time
+  registers. Consult the data sheet for setting these values. Since these
+  registers only affect the i2c master operation of the chip, it probably
+  only makes sense to set this on the remote device.
+- gpio-config-<n> : Configuration for GPIO bit n (currently n can be 0-3)
+- gpio-config-reg<n> : Configuration for Registered GPIO bit n (currently n may
+  be 4-8)
+- 18-bit-video-mode : Sets 18 bit video mode on the serializer
+- mapsel-override : Override mapsel setting - only available on certain chips
+  See datasheet for details.
+- mapsel-value : Value to use when mapsel-override is set.
+- oen-override : Override OEN/OSS setting
+- oen-value : Value to use for OEN when oen-override is set.
+- oss-value : Value to use for OSS when oen-override is set.
+- apply-AVMUTE-errata : Apply errata to keep deserializer from accidently
+  entering AVMUTE mode
+- disable-clock-autodetect : Disable clock detection
+- apply-temp-ramp-errata : Apply errata for display issue (distortion,
+  flickering) when the ambient temperature around serializer changes by more
+  than 60degC. This errata is applicable for DS90U_SER929.
+- verify-hdmi-clock : Verify the HDMI clock before Init B sequence. This errata
+  is applicable for DS90U_SER929.
+- backchannel-watchdog-value: Timeout value in units of 2 milliseconds of
+  backchannel watchdog. Set it to:
+   - 0x01-0x7F: Valid value for watchdog timeout.
+   - 0xFF     : Disable the watchdog.
+   - Other    : Use the default setting of watchdog.
+- lvds-vod-value: Value to use for the FPD/OLDI Output Voltage swing setting.
+
+  Possible values for LVDS VOD are 0-3, 0 is the chip default.
+  For DS90UB948, the settings are:
+  0x00: Setting 1 - 190mV typical voltage swing (single-ended)
+  0x01: Setting 2 - 275mV typical voltage swing (single-ended)
+  0x10: Setting 3 - 325mV typical voltage swing (single-ended)
+  0x11: Setting 4 - 375mV typical voltage swing (single-ended)
+
+  Possible GPIO Config Values:
+  - 0 : Disabled (normal pin function)
+  - 3 : Transmit (local input)
+  - 5 : Receive (output, value received from remote)
+  - 1 : Local Output Low
+  - 9 : Local Output High
+  - 2 : Tristate (929/940-model only)
+  - 7 : Transmit or Output Low if no link (929-model only)
+  - 15: Transmit or Output High if no link (929-model only)
+  Values 4, 6, 8-14, and >15 are invalid.
+  Note that it generally only makes sense to set a value of 3 or 5 if the
+  remote is set to the opposite value.
+
+Note: I am currently only supporting GPIO 0-3. Future expansion will create a
+GPIO controller and add support for more complete capabilities.
+
+Examples :
+
+lvds-deserializer@2d {
+	#address-cells = <0x1>;
+	#size-cells = <0x0>;
+	compatible = "ti,ds90u";
+	reg = <0x2D>;
+	lock-gpio = <&gpio1 1 0>;
+	pdb-gpio = <&gpio1 2 0>;
+
+	lvds-remote-serializer@0c {
+		compatible = "ti,ds90uh925q";
+		reg = <0x0C>;
+	};
+};
+
+lvds-serializer@0c {
+	#address-cells = <0x1>;
+	#size-cells = <0x0>;
+	compatible = "ti,ds90uh927q", "ti,ds90u";
+	reg = <0x0C>;
+	lock-gpio = <&gpio1 3 0>;
+	pdb-gpio = <&gpio1 4 0>;
+	i2c-address-map = <0x4D 0x4D>, <0x4E 0x27>;
+	gpio-config-2 = <5>; /* touchscreen interrupt */
+	gpio-config-3 = <3>; /* touchscreen reset */
+
+	lvds-remote-deserializer@2c {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+		compatible = "ti,ds90uh928q";
+		reg = <0x2C>;
+		scl-pulse-width = <25>;
+		gpio-config-0 = <9>; /* backlight state */
+		gpio-config-2 = <3>; /* touchscreen interrupt */
+		gpio-config-3 = <5>; /* touchscreen reset */
+
+		remote-touchscreen@4d {
+			compatible = "delphi,ts-generic";
+			reg = <0x4D>;
+			delphi,bootloader_addr = <0x4E>
+		};
+	};
+};
+
+lvds-deserializer@2c {
+	#address-cells = <0x1>;
+	#size-cells = <0x0>;
+	compatible = "ti,ds90u";
+	reg = <0x2c>;
+	lock-gpio = <&gpio1 1 0>;
+	pdb-gpio = <&gpio1 2 0>;
+
+	ds90u_gpio1: lvds-remote-serializer@0c {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+		#gpio-cells = <2>;
+		gpio-controller;
+		compatible = "ti,ds90uh925q";
+		reg = <0x0C>;
+
+		remote-widget@32 {
+			compatible = "sii,widget";
+			reg = <0x32>;
+			reset-gpio = <&ds90u_gpio1 5 0>
+		};
+	};
+};

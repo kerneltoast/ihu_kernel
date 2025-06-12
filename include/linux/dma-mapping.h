@@ -71,6 +71,8 @@
  */
 #define DMA_ATTR_PRIVILEGED		(1UL << 9)
 
+#define DMA_ATTR_VCC_PREALLOC_PAC	(1UL << 16)
+
 /*
  * DMA_ATTR_STRONGLY_ORDERED: Specifies that accesses to the mapping must
  * not be buffered, reordered, merged with other accesses, or unaligned.

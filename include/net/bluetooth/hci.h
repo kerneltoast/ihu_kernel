@@ -192,6 +192,11 @@ enum {
 	 *
 	 */
 	HCI_QUIRK_NON_PERSISTENT_SETUP,
+
+	/* when this quirk is set then exit init */
+	HCI_QUIRK_APTIV_EXIT,
+	HCI_QUIRK_APTIV_PRODUCT1,
+	HCI_QUIRK_APTIV_USBTIMEOUT,
 };
 
 /* HCI device flags */

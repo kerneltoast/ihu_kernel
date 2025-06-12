@@ -13,6 +13,7 @@
 #include "crl_imx318_configuration.h"
 #include "crl_ov8858_configuration.h"
 #include "crl_ov13860_configuration.h"
+#include "crl_adv7281_cvbs_configuration.h"
 #include "crl_adv7481_cvbs_configuration.h"
 #include "crl_adv7481_hdmi_configuration.h"
 #include "crl_adv7481_eval_configuration.h"
@@ -34,6 +35,7 @@
 #include "crl_ox03a10_configuration.h"
 #include "crl_ox03a10_ficosa_configuration.h"
 #include "crl_ov495_configuration.h"
+#include "crl_max9288_configuration.h"
 
 static const struct crlmodule_sensors supported_sensors[] = {
 	{ "i2c-SONY214A:00", "imx214", &imx214_crl_configuration },
@@ -48,6 +50,7 @@ static const struct crlmodule_sensors supported_sensors[] = {
 	{ "IMX477-SLAVE-1", "imx477", &imx477_slave_crl_configuration },
 	{ "OV13860", "ov13860", &ov13860_crl_configuration },
 	{ "OV9281", "ov9281", &ov9281_crl_configuration },
+	{ "ADV7281", "adv7281", &adv7281_cvbs_crl_configuration },
 	{ "ADV7481 CVBS", "adv7481_cvbs", &adv7481_cvbs_crl_configuration },
 	{ "ADV7481 HDMI", "adv7481_hdmi", &adv7481_hdmi_crl_configuration },
 	{ "ADV7481_EVAL", "adv7481_eval", &adv7481_eval_crl_configuration },
@@ -75,6 +78,7 @@ static const struct crlmodule_sensors supported_sensors[] = {
 	{ "OX03A10_FICOSA", "ox03a10_ficosa",
 	 &ox03a10_ficosa_crl_configuration },
 	{ "OV495", "ov495", &ov495_crl_configuration},
+	{ "MAX9288", "max9288", &max9288_crl_configuration },
 };
 
 /*

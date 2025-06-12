@@ -86,6 +86,14 @@ static struct property_entry uart_properties[] = {
 	{ },
 };
 
+static struct property_entry uart_properties_thre_mode[] = {
+	PROPERTY_ENTRY_U32("reg-io-width", 4),
+	PROPERTY_ENTRY_U32("reg-shift", 2),
+	PROPERTY_ENTRY_BOOL("snps,uart-16550-compatible"),
+	PROPERTY_ENTRY_BOOL("use-thre-mode"),
+	{ },
+};
+
 static const struct intel_lpss_platform_info spt_uart_info = {
 	.clk_rate = 120000000,
 	.clk_con_id = "baudclk",
@@ -102,6 +110,12 @@ static const struct intel_lpss_platform_info bxt_uart_info = {
 	.properties = uart_properties,
 };
 
+static const struct intel_lpss_platform_info bxt_uart_info_thre_mode = {
+	.clk_rate = 100000000,
+	.clk_con_id = "baudclk",
+	.properties = uart_properties_thre_mode,
+};
+
 static struct property_entry bxt_i2c_properties[] = {
 	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 42),
 	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
@@ -114,6 +128,109 @@ static const struct intel_lpss_platform_info bxt_i2c_info = {
 	.properties = bxt_i2c_properties,
 };
 
+#ifdef CONFIG_MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS
+
+static struct property_entry apl_i2c_properties_0[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_1),
+	{ },
+};
+
+static struct property_entry apl_i2c_properties_1[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_2),
+	{ },
+};
+
+static struct property_entry apl_i2c_properties_2[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_3),
+	{ },
+};
+
+static struct property_entry apl_i2c_properties_3[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_4),
+	{ },
+};
+
+static struct property_entry apl_i2c_properties_4[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_5),
+	{ },
+};
+
+static struct property_entry apl_i2c_properties_5[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_6),
+	{ },
+};
+
+static struct property_entry apl_i2c_properties_6[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_7),
+	{ },
+};
+
+static struct property_entry apl_i2c_properties_7[] = {
+	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
+	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
+	PROPERTY_ENTRY_U32("i2c-scl-falling-time-ns", 208),
+	PROPERTY_ENTRY_U32("i2c-bus-number", CONFIG_MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_8),
+	{ },
+};
+
+static const struct intel_lpss_platform_info apl_i2c_info[] = {
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_0,
+	},
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_1,
+	},
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_2,
+	},
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_3,
+	},
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_4,
+	},
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_5,
+	},
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_6,
+	},
+	{
+	.clk_rate = 133000000,
+	.properties = apl_i2c_properties_7,
+	},
+};
+
+#else /* CONFIG_MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS */
+
 static struct property_entry apl_i2c_properties[] = {
 	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 207),
 	PROPERTY_ENTRY_U32("i2c-sda-falling-time-ns", 171),
@@ -125,6 +242,8 @@ static const struct intel_lpss_platform_info apl_i2c_info = {
 	.clk_rate = 133000000,
 	.properties = apl_i2c_properties,
 };
+
+#endif /* CONFIG_MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS */
 
 static struct property_entry glk_i2c_properties[] = {
 	PROPERTY_ENTRY_U32("i2c-sda-hold-time-ns", 313),
@@ -209,6 +328,16 @@ static const struct pci_device_id intel_lpss_pci_ids[] = {
 	{ PCI_VDEVICE(INTEL, 0x34eb), (kernel_ulong_t)&bxt_i2c_info },
 	{ PCI_VDEVICE(INTEL, 0x34fb), (kernel_ulong_t)&spt_info },
 	/* APL */
+#ifdef CONFIG_MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS
+	{ PCI_VDEVICE(INTEL, 0x5aac), (kernel_ulong_t)&apl_i2c_info[0] },
+	{ PCI_VDEVICE(INTEL, 0x5aae), (kernel_ulong_t)&apl_i2c_info[1] },
+	{ PCI_VDEVICE(INTEL, 0x5ab0), (kernel_ulong_t)&apl_i2c_info[2] },
+	{ PCI_VDEVICE(INTEL, 0x5ab2), (kernel_ulong_t)&apl_i2c_info[3] },
+	{ PCI_VDEVICE(INTEL, 0x5ab4), (kernel_ulong_t)&apl_i2c_info[4] },
+	{ PCI_VDEVICE(INTEL, 0x5ab6), (kernel_ulong_t)&apl_i2c_info[5] },
+	{ PCI_VDEVICE(INTEL, 0x5ab8), (kernel_ulong_t)&apl_i2c_info[6] },
+	{ PCI_VDEVICE(INTEL, 0x5aba), (kernel_ulong_t)&apl_i2c_info[7] },
+#else
 	{ PCI_VDEVICE(INTEL, 0x5aac), (kernel_ulong_t)&apl_i2c_info },
 	{ PCI_VDEVICE(INTEL, 0x5aae), (kernel_ulong_t)&apl_i2c_info },
 	{ PCI_VDEVICE(INTEL, 0x5ab0), (kernel_ulong_t)&apl_i2c_info },
@@ -217,13 +346,14 @@ static const struct pci_device_id intel_lpss_pci_ids[] = {
 	{ PCI_VDEVICE(INTEL, 0x5ab6), (kernel_ulong_t)&apl_i2c_info },
 	{ PCI_VDEVICE(INTEL, 0x5ab8), (kernel_ulong_t)&apl_i2c_info },
 	{ PCI_VDEVICE(INTEL, 0x5aba), (kernel_ulong_t)&apl_i2c_info },
+#endif
 	{ PCI_VDEVICE(INTEL, 0x5abc), (kernel_ulong_t)&bxt_uart_info },
 	{ PCI_VDEVICE(INTEL, 0x5abe), (kernel_ulong_t)&bxt_uart_info },
 	{ PCI_VDEVICE(INTEL, 0x5ac0), (kernel_ulong_t)&bxt_uart_info },
 	{ PCI_VDEVICE(INTEL, 0x5ac2), (kernel_ulong_t)&bxt_info },
 	{ PCI_VDEVICE(INTEL, 0x5ac4), (kernel_ulong_t)&bxt_info },
 	{ PCI_VDEVICE(INTEL, 0x5ac6), (kernel_ulong_t)&bxt_info },
-	{ PCI_VDEVICE(INTEL, 0x5aee), (kernel_ulong_t)&bxt_uart_info },
+	{ PCI_VDEVICE(INTEL, 0x5aee), (kernel_ulong_t)&bxt_uart_info_thre_mode },
 	/* SPT-LP */
 	{ PCI_VDEVICE(INTEL, 0x9d27), (kernel_ulong_t)&spt_uart_info },
 	{ PCI_VDEVICE(INTEL, 0x9d28), (kernel_ulong_t)&spt_uart_info },

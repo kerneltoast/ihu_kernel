@@ -40,6 +40,7 @@
 #include <drm/i915_drm.h>
 #include <drm/intel_lpe_audio.h>
 #include "i915_drv.h"
+#include <drm/drm_panel.h>
 
 static struct drm_device *intel_hdmi_to_dev(struct intel_hdmi *intel_hdmi)
 {
@@ -1093,7 +1094,7 @@ int intel_hdmi_hdcp_toggle_signalling(struct intel_digital_port *intel_dig_port,
 }
 
 static
-bool intel_hdmi_hdcp_check_link(struct intel_digital_port *intel_dig_port)
+bool intel_hdmi_hdcp_check_link_once(struct intel_digital_port *intel_dig_port)
 {
 	struct drm_i915_private *dev_priv =
 		intel_dig_port->base.base.dev->dev_private;
@@ -1111,13 +1112,27 @@ bool intel_hdmi_hdcp_check_link(struct intel_digital_port *intel_dig_port)
 	I915_WRITE(PORT_HDCP_RPRIME(port), ri.reg);
 
 	/* Wait for Ri prime match */
-	if (wait_for(I915_READ(PORT_HDCP_STATUS(port)) &
+	if (wait_for((I915_READ(PORT_HDCP_STATUS(port)) &
+		     (HDCP_STATUS_RI_MATCH | HDCP_STATUS_ENC)) ==
 		     (HDCP_STATUS_RI_MATCH | HDCP_STATUS_ENC), 1)) {
-		DRM_ERROR("Ri' mismatch detected, link check failed (%x)\n",
+		DRM_DEBUG("Ri' mismatch detected (%x)\n",
 			  I915_READ(PORT_HDCP_STATUS(port)));
 		return false;
 	}
 	return true;
+}
+
+static
+bool intel_hdmi_hdcp_check_link(struct intel_digital_port *intel_dig_port)
+{
+	int retry;
+
+	for (retry = 0; retry < 3; retry++)
+		if (intel_hdmi_hdcp_check_link_once(intel_dig_port))
+			return true;
+
+	DRM_ERROR("Link check failed\n");
+	return false;
 }
 
 static const struct intel_hdcp_shim intel_hdmi_hdcp_shim = {
@@ -2072,6 +2087,13 @@ static void chv_hdmi_pre_enable(struct intel_encoder *encoder,
 
 static void intel_hdmi_destroy(struct drm_connector *connector)
 {
+	struct drm_panel *panel = to_intel_connector(connector)->drm_panel;
+
+	if (panel) {
+		drm_panel_detach(panel);
+		drm_panel_put(panel);
+	}
+
 	if (intel_attached_hdmi(connector)->cec_notifier)
 		cec_notifier_put(intel_attached_hdmi(connector)->cec_notifier);
 	kfree(to_intel_connector(connector)->detect_edid);
@@ -2351,6 +2373,7 @@ void intel_hdmi_init_connector(struct intel_digital_port *intel_dig_port,
 	struct drm_device *dev = intel_encoder->base.dev;
 	struct drm_i915_private *dev_priv = to_i915(dev);
 	enum port port = intel_encoder->port;
+	struct fwnode_handle *remote;
 
 	DRM_DEBUG_KMS("Adding HDMI connector on port %c\n",
 		      port_name(port));
@@ -2382,6 +2405,41 @@ void intel_hdmi_init_connector(struct intel_digital_port *intel_dig_port,
 		intel_connector->get_hw_state = intel_ddi_connector_get_hw_state;
 	else
 		intel_connector->get_hw_state = intel_connector_get_hw_state;
+
+	remote = fwnode_graph_get_remote_node(
+		dev_fwnode(&dev_priv->drm.pdev->dev), (u32) port, 0);
+
+	if (remote) {
+		intel_connector->drm_panel = fw_drm_find_panel(remote);
+
+		fwnode_handle_put(remote);
+
+		if (IS_ERR(intel_connector->drm_panel)) {
+			dev_err(&dev_priv->drm.pdev->dev,
+				"Our panel disappeared while loading\n");
+
+			intel_connector->drm_panel = NULL;
+		} else {
+			/*
+			 * Create device links between consumer and supplier.
+			 * This should be done by firmware (ACPI or device tree)
+			 * which would also avoid probe deferring. However the
+			 * corresponding feature is not implemented yet. It gets
+			 * introduced in kernel version 5.5 but even then it is
+			 * available only for device tree. It gets more generic
+			 * in kernel 5.7 but the actual ACPI implementation is
+			 * still not available as of kernel 5.7.
+			 */
+			if (!device_link_add(&dev_priv->drm.pdev->dev,
+				intel_connector->drm_panel->dev,
+				DL_FLAG_STATELESS))
+
+				dev_err(&dev_priv->drm.pdev->dev,
+					"Failed to create link to panel\n");
+
+			drm_panel_attach(intel_connector->drm_panel, connector);
+		}
+	}
 
 	intel_hdmi_add_properties(intel_hdmi, connector);
 

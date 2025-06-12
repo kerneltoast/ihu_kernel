@@ -1,0 +1,130 @@
+* Device tree bindings for Alpine/LG CSDs used by VolvoCars
+
+Required properties:
+- compatible:       "alpine,csd15", "alpine,csd30", "alpine,csd35", "lg,csd31"
+- power_down-gpios: GPIO used to control PWDN pin of serializer
+- csd_ctrl-gpios:   GPIO controlling CSD wakeup / control signal
+- csd_int-gpios:    GPIO where CSD interrupt line from serializer is connected
+- errb-gpios:       GPIO receiving ERRB signal from serializer
+- pinctrl-names:    needs to be "default"
+- pinctrl-0:        references to GPIO muxing definitions
+- port:             link to display output on SOC
+
+Optional properties:
+- gmsl_mode-gpios:  GPIO controlling GMSL mode setting for serializer
+- lock-gpios:       GPIO receiving LOCK signal from serializer
+
+Example:
+
+&sde_dp {
+	[...]
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			soc_sde_dp: endpoint {
+				remote-endpoint = <&csd_dp_port>;
+			};
+		};
+	};
+};
+
+&tlmm {
+	csd_power_down: csd_power_down {
+		mux {
+			pins = "gpio24";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio24";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	csd_gmsl_mode: csd_gmsl_mode {
+		mux {
+			pins = "gpio25";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio25";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	csd_csd_ctrl: csd_csd_ctrl {
+		mux {
+			pins = "gpio23";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio23";
+			drive-strength = <2>;
+			bias-disable;
+			output-low;
+		};
+	};
+
+	csd_csd_int: csd_csd_int {
+		mux {
+			pins = "gpio21";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio21";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
+
+	csd_errb: csd_errb {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio22";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+};
+
+&qupv3_se18_2uart {
+	status = "ok";
+
+	csd {
+		compatible = "alpine,csd35";
+
+		power_down-gpios = <&tlmm 24 0>;
+		gmsl_mode-gpios = <&tlmm 25 0>;
+		csd_ctrl-gpios =  <&tlmm 23 0>;
+		csd_int-gpios = <&tlmm 21 0>;
+		errb-gpios = <&tlmm 22 0>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&csd_power_down
+			&csd_gmsl_mode
+			&csd_csd_ctrl
+			&csd_csd_int
+			&csd_errb>;
+
+		port {
+			csd_dp_port: endpoint {
+				remote-endpoint = <&soc_sde_dp>;
+			};
+		};
+	};
+};

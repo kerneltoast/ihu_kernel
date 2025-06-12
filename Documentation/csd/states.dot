@@ -1,0 +1,83 @@
+digraph CSD {
+	SOFF_CRESET [color=green, style=filled, fillcolor=lightgreen]
+	SOFF_CRESET -> SCONF_CRESET [label="PRE_ENABLE &&\nserializer config (power_on + pre_enable) success"]
+	SOFF_CRESET -> TERMINATE [label="PRE_ENABLE &&\nserializer config (power_on + pre_enable) failed", fontcolor=red, color=red]
+	SOFF_CRESET -> SUSPENDED [label="SUSPEND"]
+
+	PROBED_CRESET [shape=Mdiamond, fontcolor=green, color=green]
+	PROBED_CRESET -> SCONF_CRESET [label="PRE_ENABLE &&\npre_enable config success", fontcolor=green, color=green, style=bold]
+	PROBED_CRESET -> TERMINATE [label="PRE_ENABLE &&\npre_enable config fail", fontcolor=red, color=red]
+	PROBED_CRESET -> SOFF_CRESET [label="TIMEOUT ||\nany manufacturing test\n(event postponed)"]
+	PROBED_CRESET -> SUSPENDED [label="SUSPEND"]
+
+	SCONF_CRESET [fontcolor=green, color=green]
+	SCONF_CRESET -> SRECV_CRESET [label="ENABLE &&\nenable config success", fontcolor=green, color=green, style=bold]
+	SCONF_CRESET -> RESET_SER [label="ENABLE &&\nenable config fail", fontcolor=red, color=red]
+	SCONF_CRESET -> SOFF_CRESET [label="POST_DISABLE"]
+	SCONF_CRESET -> SCONF_CRESET [label="TIMEOUT /\nreject postponed events"]
+
+	SRECV_CRESET [fontcolor=blue, color=blue]
+	SRECV_CRESET -> WAKEUP [label="!conv_timing /\nclear prog_signature", fontcolor=green, color=green, style=bold]
+	SRECV_CRESET -> CONVERTER [label="conv_timing &&\n!ee_mode &&\nconverter detected"]
+	SRECV_CRESET -> WAIT_CONVERTER [label="conv_timing &&\n(ee_mode || converter not detected)"]
+
+	WAKEUP [fontcolor=green, color=green]
+	WAKEUP -> RESETTING_CSD [label="see wakeup state diagram", fontcolor=red, color=red]
+	WAKEUP -> CONVERTER [label="see wakeup state diagram"]
+	WAKEUP -> IDLE [label="wakeup complete /\nmode_fails=0\ntransmission_fails=0", fontcolor=green, color=green, style=bold]
+	WAKEUP -> RESET_SER [label="see wakeup state diagram", fontcolor=red, color=red]
+	WAKEUP -> CSD_PROG [label="see wakeup state diagram"]
+	WAKEUP -> SCONF_CRESET [label="DISABLE"]
+
+	RESETTING_CSD [fontcolor=blue, color=blue]
+	RESETTING_CSD -> SRECV_CRESET [label="min reset pulse length reached"]
+
+	CONVERTER [color=green, style=filled, fillcolor=lightgreen]
+	CONVERTER -> WAIT_CONVERTER [label="TIMEOUT &&\n(ee_mode || converter not detected) &&\nconv_timing"]
+	CONVERTER -> CONVERTER [label="TIMEOUT &&\n!ee_mode &&\nconverter detected"]
+	CONVERTER -> SRECV_CRESET [label="TIMEOUT &&\n(ee_mode || converter not detected) &&\n!conv_timing"]
+	CONVERTER -> SCONF_CRESET [label="DISABLE"]
+
+	WAIT_CONVERTER [color=green, style=filled, fillcolor=lightgreen]
+	WAIT_CONVERTER -> WAIT_CONVERTER [label="TIMEOUT &&\n(ee_mode || converter not detected) &&\nconv_timing"]
+	WAIT_CONVERTER -> CONVERTER [label="TIMEOUT &&\n!ee_mode &&\nconverter detected"]
+	WAIT_CONVERTER -> SRECV_CRESET [label="TIMEOUT &&\n(ee_mode || converter not detected) &&\n!conv_timing"]
+	WAIT_CONVERTER -> SCONF_CRESET [label="DISABLE"]
+
+	RESET_SER [fontcolor=blue, color=blue]
+	RESET_SER -> SRECV_CRESET [label="serializer config (power_on + pre_enable + enable) success"]
+	RESET_SER -> TERMINATE [label="serializer config (power_on + pre_enable + enable) fail", fontcolor=red, color=red]
+
+	IDLE [color=green, style=filled, fillcolor=lightgreen]
+	IDLE -> RESET_SER [label="transmission_fails > limit ||\ncritical HDCP fail", fontcolor=red, color=red]
+	IDLE -> RESETTING_CSD [label="mode_fails > limit ||\nINT_IRQ (high) -> PBL", fontcolor=red, color=red]
+	IDLE -> CSD_REG_PROG [label="INT_IRQ (high) -> APP"]
+	IDLE -> WAKEUP [label="diag programming session request /\nset prog_signature"]
+	IDLE -> WAKEUP [label="diag reset request/\nclear prog_signature"]
+	IDLE -> SCONF_CRESET [label="DISABLE"]
+
+	CSD_PROG [color=green, style=filled, fillcolor=lightgreen]
+	CSD_PROG -> RESETTING_CSD [label="INT_IRQ (high) -> reading int status failed ||\nINT_IRQ (high) -> APP ||\ndiag reset request failed", fontcolor=red, color=red]
+	CSD_PROG -> CSD_PROG_REG_PROG [label="INT_IRQ (high) -> PBL"]
+	CSD_PROG -> WAKEUP [label="diag reset request ||\ndiag session change /\nclear prog_signature"]
+	CSD_PROG -> SCONF_CRESET [label="DISABLE"]
+
+	TERMINATE [shape=Msquare, fontcolor=blue, color=blue]
+
+	"<ANY_GREEN>" [fontcolor=green, color=green]
+	"<ANY_GREEN>" -> TERMINATE [label="UNLOAD"]
+
+	CSD_REG_PROG [fontcolor=green, color=green]
+	CSD_REG_PROG -> RESET_SER [label="TIMEOUT", fontcolor=red, color=red]
+	CSD_REG_PROG -> IDLE [label="INT_IRQ (low)"]
+	CSD_REG_PROG -> SCONF_CRESET [label="DISABLE"]
+
+	CSD_PROG_REG_PROG [fontcolor=green, color=green]
+	CSD_PROG_REG_PROG -> RESET_SER [label="TIMEOUT", fontcolor=red, color=red]
+	CSD_PROG_REG_PROG -> CSD_PROG [label="INT_IRQ (low)"]
+	CSD_PROG_REG_PROG -> SCONF_CRESET [label="DISABLE"]
+
+	SUSPENDED [fontcolor=blue, color=blue]
+	SUSPENDED -> SOFF_CRESET [label="resume"]
+	SUSPENDED -> TERMINATE [label="resume &&\nUART open failed", fontcolor=red, color=red]
+}

@@ -71,10 +71,19 @@ struct snd_soc_acpi_mach snd_soc_acpi_intel_bxt_machines[] = {
 #else
 	{
 		.id = "INT34C3",
-		.drv_name = "bxt_tdf8532",
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
+		.drv_name = "bxt_ivi_ull",
+		.fw_filename = "intel/dsp_fw_ull_bxtn.bin",
+#else
 		.fw_filename = "intel/dsp_fw_bxtn.bin",
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_VOLVO_SID_MACH)
+		.drv_name = "volvo_sid_machine",
+#else
+		.drv_name = "bxt_tdf8532",
 		.sof_fw_filename = "intel/sof-apl.ri",
 		.sof_tplg_filename = "intel/sof-apl-tdf8532.tplg",
+#endif
+#endif
 		.asoc_plat_name = "0000:00:0e.0",
 	},
 #endif

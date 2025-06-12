@@ -1,0 +1,90 @@
+digraph CSD {
+	rankdir=LR
+
+	{
+		node [shape=plaintext]
+		edge [style="invis"]
+		 0 ->  2 ->  4 ->  6 ->  8 -> 10
+		10 -> 12 -> 14 -> 16 -> 18 -> 20
+		20 -> 22 -> 24 -> 26 -> 28 -> 30
+		30 -> 32 -> 34 -> 36 -> 38 -> 40
+	}
+
+	/* no touch input */
+	{
+		rank = same
+		IDLE_IHU_REQ [fontcolor=green, color=green]
+		0
+	}
+	IDLE_IHU_REQ -> IDLE_STATUS [fontcolor=green, color=green, label="timeout /\nstatus"]
+
+	{
+		rank = same
+		IDLE_STATUS [fontcolor=green, color=green]
+		20
+	}
+	IDLE_STATUS -> IDLE_TOUCH [fontcolor=green, color=green, label="timeout /\ntouch"]
+
+	{
+		rank = same
+		IDLE_TOUCH [fontcolor=green, color=green]
+		40
+	}
+	IDLE_TOUCH -> IDLE_IHU_REQ [fontcolor=green, color=green, label="timeout (20 ms) /\nihu_req"]
+
+	/* touch input */
+	{
+		rank = same
+		ACTIV_IHU_REQ [fontcolor=blue, color=blue]
+		0
+	}
+	ACTIV_IHU_REQ -> ACTIV_TOUCH1 [fontcolor=blue, color=blue, label="timeout /\ntouch"]
+
+	{
+		rank = same
+		ACTIV_TOUCH1 [fontcolor=blue, color=blue]
+		4
+	}
+	ACTIV_TOUCH1 -> ACTIV_TOUCH3 [fontcolor=blue, color=blue, label="timeout /\ntouch"]
+
+	{
+		rank = same
+		ACTIV_TOUCH3 [fontcolor=blue, color=blue]
+		14
+	}
+	ACTIV_TOUCH3 -> ACTIV_STATUS [fontcolor=blue, color=blue, label="timeout /\nstatus"]
+
+	{
+		rank = same
+		ACTIV_STATUS [fontcolor=blue, color=blue]
+		20
+	}
+	ACTIV_STATUS -> ACTIV_TOUCH5 [fontcolor=blue, color=blue, label="timeout /\ntouch"]
+
+	{
+		rank = same
+		ACTIV_TOUCH5 [fontcolor=blue, color=blue]
+		24
+	}
+	ACTIV_TOUCH5 -> ACTIV_TOUCH7 [fontcolor=blue, color=blue, label="timeout /\ntouch"]
+
+	{
+		rank = same
+		ACTIV_TOUCH7 [fontcolor=blue, color=blue]
+		34
+	}
+	ACTIV_TOUCH7 -> ACTIV_IHU_REQ [fontcolor=blue, color=blue, label="timeout (6 ms) /\nihu_req"]
+
+	/* no touch -> touch */
+	IDLE_IHU_REQ -> ACTIV_STATUS [fontcolor=red, color=red, label="int (touch) /\ntouch, status"]
+	IDLE_STATUS -> ACTIV_IHU_REQ [fontcolor=red, color=red, label="int (touch) /\ntouch, ihu_req"]
+	IDLE_TOUCH -> ACTIV_IHU_REQ [fontcolor=red, color=red, label="int (touch) /\ntouch, ihu_req"]
+
+	/* touch -> no touch */
+	ACTIV_IHU_REQ -> IDLE_IHU_REQ [fontcolor=orange, color=orange, label="int (low) /\ntouch"]
+	ACTIV_TOUCH1 -> IDLE_IHU_REQ [fontcolor=orange, color=orange, label="int (low) /\ntouch"]
+	ACTIV_TOUCH3 -> IDLE_IHU_REQ [fontcolor=orange, color=orange, label="int (low) /\ntouch"]
+	ACTIV_STATUS -> IDLE_STATUS [fontcolor=orange, color=orange, label="int (low) /\ntouch"]
+	ACTIV_TOUCH5 -> IDLE_STATUS [fontcolor=orange, color=orange, label="int (low) /\ntouch"]
+	ACTIV_TOUCH7 -> IDLE_STATUS [fontcolor=orange, color=orange, label="int (low) /\ntouch"]
+}

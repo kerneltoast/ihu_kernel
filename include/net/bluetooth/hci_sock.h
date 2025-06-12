@@ -126,6 +126,8 @@ struct hci_dev_info {
 	__u16 sco_pkts;
 
 	struct hci_dev_stats stat;
+
+	__u32 unique_id;
 };
 
 struct hci_conn_info {

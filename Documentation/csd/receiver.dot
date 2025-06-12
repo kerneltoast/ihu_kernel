@@ -1,0 +1,52 @@
+digraph receiver {
+	IDLE
+	IDLE -> CSD_REQ_DEV [label="SYNC_BYTE", fontcolor=blue, color=blue]
+	IDLE -> RECV [label="ACK_BYTE &&\nreply expected &&\nexpected length not 0", fontcolor=green, color=green]
+
+	SYNC_LOST
+	SYNC_LOST -> RECV [label="ACK_BYTE &&\nreply expected &&\nexpected length not 0"]
+	SYNC_LOST -> IDLE [label="ACK_BYTE &&\nreply expected &&\nexpected length is 0"]
+
+	RECV
+	RECV -> IDLE [label="receiving completed", fontcolor=green, color=green]
+	RECV -> IDLE [label="receiving restarted\nor stopped", fontcolor=red, color=red]
+
+	CSD_REQ_DEV
+	CSD_REQ_DEV -> CSD_DES_RREQ_MSB [label="DES_ADDR_READ &&\ngmsl2", fontcolor=blue, color=blue]
+	CSD_REQ_DEV -> CSD_DES_RREQ_LSB [label="DES_ADDR_READ &&\n!gmsl2", fontcolor=blue, color=blue]
+	CSD_REQ_DEV -> CSD_DES_WREQ_MSB [label="DES_ADDR_WRITE &&\ngmsl2", fontcolor=blue, color=blue]
+	CSD_REQ_DEV -> CSD_DES_WREQ_LSB [label="DES_ADDR_WRITE &&\n!gmsl2", fontcolor=blue, color=blue]
+	CSD_REQ_DEV -> SYNC_LOST [label="any other address", fontcolor=red, color=red]
+
+	CSD_DES_RREQ_MSB
+	CSD_DES_RREQ_MSB -> CSD_DES_RREQ_LSB [fontcolor=blue, color=blue]
+
+	CSD_DES_RREQ_LSB
+	CSD_DES_RREQ_LSB -> CSD_DES_RREQ_CNT [fontcolor=blue, color=blue]
+
+	CSD_DES_WREQ_MSB
+	CSD_DES_WREQ_MSB -> CSD_DES_WREQ_LSB [fontcolor=blue, color=blue]
+
+	CSD_DES_WREQ_LSB
+	CSD_DES_WREQ_LSB -> CSD_DES_WREQ_CNT [fontcolor=blue, color=blue]
+
+	CSD_DES_RREQ_CNT
+	CSD_DES_RREQ_CNT -> CSD_DES_RREQ_ACK [fontcolor=blue, color=blue]
+
+	CSD_DES_WREQ_CNT
+	CSD_DES_WREQ_CNT -> CSD_DES_WREQ_DATA [fontcolor=blue, color=blue]
+
+	CSD_DES_RREQ_ACK
+	CSD_DES_RREQ_ACK -> CSD_DES_RREQ_DATA [label="ACK_BYTE", fontcolor=blue, color=blue]
+	CSD_DES_RREQ_ACK -> SYNC_LOST [label="not ACK_BYTE", fontcolor=red, color=red]
+
+	CSD_DES_WREQ_DATA
+	CSD_DES_WREQ_DATA -> CSD_DES_WREQ_ACK [label="write completed", fontcolor=blue, color=blue]
+
+	CSD_DES_RREQ_DATA
+	CSD_DES_RREQ_DATA -> IDLE [label="read completed", fontcolor=blue, color=blue]
+
+	CSD_DES_WREQ_ACK
+	CSD_DES_WREQ_ACK -> IDLE [label="ACK_BYTE", fontcolor=blue, color=blue]
+	CSD_DES_WREQ_ACK -> SYNC_LOST [label="not ACK_BYTE", fontcolor=red, color=red]
+}

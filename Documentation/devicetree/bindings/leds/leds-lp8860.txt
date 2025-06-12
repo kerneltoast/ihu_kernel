@@ -15,6 +15,7 @@ Required properties:
 Optional properties:
 	- enable-gpios : gpio pin to enable (active high)/disable the device.
 	- vled-supply : LED supply
+	- immutable-eeprom - don't modify eeprom
 
 Required child properties:
 	- reg : 0

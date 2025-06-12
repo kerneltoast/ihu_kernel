@@ -452,6 +452,7 @@ static int intel_gpio_request_enable(struct pinctrl_dev *pctldev,
 	struct intel_pinctrl *pctrl = pinctrl_dev_get_drvdata(pctldev);
 	void __iomem *padcfg0;
 	unsigned long flags;
+	u32 value;
 
 	raw_spin_lock_irqsave(&pctrl->lock, flags);
 
@@ -475,8 +476,13 @@ static int intel_gpio_request_enable(struct pinctrl_dev *pctldev,
 
 	intel_gpio_set_gpio_mode(padcfg0);
 
-	/* Disable TX buffer and enable RX (this will be input) */
-	__intel_gpio_set_direction(padcfg0, true);
+	/* default to input if pin was tri-stated before */
+	value = readl(padcfg0);
+	if ((value & PADCFG0_GPIORXDIS) && (value & PADCFG0_GPIOTXDIS)) {
+		value &= ~PADCFG0_GPIORXDIS;
+		writel(value, padcfg0);
+	}
+	/* don't change in case of input, output and INOUT */
 
 	raw_spin_unlock_irqrestore(&pctrl->lock, flags);
 
@@ -840,7 +846,9 @@ static int intel_gpio_get(struct gpio_chip *chip, unsigned int offset)
 		return -EINVAL;
 
 	padcfg0 = readl(reg);
-	if (!(padcfg0 & PADCFG0_GPIOTXDIS))
+
+	// return current output value if input is disabled
+	if (padcfg0 & PADCFG0_GPIORXDIS)
 		return !!(padcfg0 & PADCFG0_GPIOTXSTATE);
 
 	return !!(padcfg0 & PADCFG0_GPIORXSTATE);

@@ -1,0 +1,6 @@
+config BCM89230_ETHSWITCH_MOD
+	tristate "BCM89230 Switch"
+	default n
+	depends on SPI
+	help
+	  performs initial configuration of Eth/BroadReach switch

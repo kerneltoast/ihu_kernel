@@ -29,6 +29,9 @@
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
 #include <linux/suspend.h>
+#include <linux/debugfs.h>
+#include <linux/kernel.h>
+#include <linux/workqueue.h>
 #include <asm/unaligned.h>
 
 #include <net/bluetooth/bluetooth.h>
@@ -45,6 +48,9 @@ static bool force_scofix;
 static bool enable_autosuspend = IS_ENABLED(CONFIG_BT_HCIBTUSB_AUTOSUSPEND);
 
 static bool reset = true;
+static int csrpatch = 0;
+static char *bdaddr = "";
+static int ftrim = -1;
 
 static struct usb_driver btusb_driver;
 
@@ -185,6 +191,9 @@ MODULE_DEVICE_TABLE(usb, btusb_table);
 static const struct usb_device_id blacklist_table[] = {
 	/* CSR BlueCore devices */
 	{ USB_DEVICE(0x0a12, 0x0001), .driver_info = BTUSB_CSR },
+
+	/* Aptiv: CSR BlueCore devices, after patching: */
+	{ USB_DEVICE(0x0a12, 0x0003), .driver_info = BTUSB_CSR },
 
 	/* Broadcom BCM2033 without firmware */
 	{ USB_DEVICE(0x0a5c, 0x2033), .driver_info = BTUSB_IGNORE },
@@ -493,6 +502,8 @@ struct btusb_data {
 	int (*setup_on_usb)(struct hci_dev *hdev);
 
 	int oob_wake_irq;   /* irq for out-of-band wake-on-bt */
+
+	struct dentry *dirent;
 };
 
 static inline void btusb_free_frags(struct btusb_data *data)
@@ -1541,6 +1552,9 @@ static int btusb_setup_bcm92035(struct hci_dev *hdev)
 
 	return 0;
 }
+
+/* Aptiv: Moved from libbt-vendor */
+#include "btusb_csr.c"
 
 static int btusb_setup_csr(struct hci_dev *hdev)
 {
@@ -3175,16 +3189,27 @@ static int btusb_probe(struct usb_interface *intf,
 	if (id->driver_info & BTUSB_CSR) {
 		struct usb_device *udev = data->udev;
 		u16 bcdDevice = le16_to_cpu(udev->descriptor.bcdDevice);
+		u16 idProduct = le16_to_cpu(udev->descriptor.idProduct);
 
 		/* Old firmware would otherwise execute USB reset */
 		if (bcdDevice < 0x117)
 			set_bit(HCI_QUIRK_RESET_ON_CLOSE, &hdev->quirks);
 
 		/* Fake CSR devices with broken commands */
-		if (bcdDevice <= 0x100 || bcdDevice == 0x134)
+		if (bcdDevice <= 0x100 || bcdDevice == 0x134) {
+			printk(KERN_EMERG ">+> fake dev\n");
 			hdev->setup = btusb_setup_csr;
+		}
 
 		set_bit(HCI_QUIRK_SIMULTANEOUS_DISCOVERY, &hdev->quirks);
+
+		hdev->setup = btusb_setup_aptiv;
+
+		if (idProduct == 1)
+			set_bit(HCI_QUIRK_APTIV_PRODUCT1, &hdev->quirks);
+
+	} else {
+		printk(KERN_EMERG ">+> no btusb_csr_resetsetup\n");
 	}
 
 	if (id->driver_info & BTUSB_SNIFFER) {
@@ -3250,6 +3275,7 @@ static void btusb_disconnect(struct usb_interface *intf)
 		return;
 
 	hdev = data->hdev;
+
 	usb_set_intfdata(data->intf, NULL);
 
 	if (data->isoc)
@@ -3435,6 +3461,14 @@ MODULE_PARM_DESC(enable_autosuspend, "Enable USB autosuspend by default");
 
 module_param(reset, bool, 0644);
 MODULE_PARM_DESC(reset, "Send HCI reset command on initialization");
+
+module_param(csrpatch, int, 0644);
+MODULE_PARM_DESC(csrpatch, "Send HCI BCCMD patch and reset");
+
+module_param(bdaddr, charp, 0644);
+MODULE_PARM_DESC(bdaddr, "bluetooth bdaddress");
+module_param(ftrim, int, 0644);
+MODULE_PARM_DESC(ftrim, "ftrim parameter");
 
 MODULE_AUTHOR("Marcel Holtmann <marcel@holtmann.org>");
 MODULE_DESCRIPTION("Generic Bluetooth USB driver ver " VERSION);

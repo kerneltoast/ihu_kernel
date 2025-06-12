@@ -310,6 +310,15 @@ static const struct serial8250_config uart_config[] = {
 		.rxtrig_bytes	= {1, 4, 8, 14},
 		.flags		= UART_CAP_FIFO,
 	},
+	[PORT_16550A_DW] = {
+		.name		= "Designware 16550A with THRE mode",
+		.fifo_size	= 64,
+		.tx_loadsz	= 64,
+		.fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10 |
+				  UART_FCR_T_TRIG_11,
+		.rxtrig_bytes	= {1, 4, 8, 14},
+		.flags		= UART_CAP_FIFO,
+	},
 };
 
 /* Uart divisor latch read */
@@ -1794,6 +1803,14 @@ void serial8250_tx_chars(struct uart_8250_port *up)
 	int count;
 
 	if (port->x_char) {
+		if (port->type == PORT_16550A_DW) {
+			unsigned char lsr;
+
+			lsr = serial_in(up, UART_LSR);
+			up->lsr_saved_flags |= lsr & LSR_SAVE_FLAGS;
+			if (lsr & UART_LSR_THRE)
+				return;
+		}
 		serial_out(up, UART_TX, port->x_char);
 		port->icount.tx++;
 		port->x_char = 0;
@@ -1810,6 +1827,14 @@ void serial8250_tx_chars(struct uart_8250_port *up)
 
 	count = up->tx_loadsz;
 	do {
+		if (port->type == PORT_16550A_DW) {
+			unsigned char lsr;
+
+			lsr = serial_in(up, UART_LSR);
+			up->lsr_saved_flags |= lsr & LSR_SAVE_FLAGS;
+			if (lsr & UART_LSR_THRE)
+				break;
+		}
 		serial_out(up, UART_TX, xmit->buf[xmit->tail]);
 		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
 		port->icount.tx++;
@@ -1916,8 +1941,9 @@ int serial8250_handle_irq(struct uart_port *port, unsigned int iir)
 			status = serial8250_rx_chars(up, status);
 	}
 	serial8250_modem_status(up);
-	if ((!up->dma || up->dma->tx_err) && (status & UART_LSR_THRE) &&
-		(up->ier & UART_IER_THRI))
+	if ((!up->dma || up->dma->tx_err) &&
+		(((status & UART_LSR_THRE) && (up->ier & UART_IER_THRI)) ||
+		(port->type == PORT_16550A_DW)))
 		serial8250_tx_chars(up);
 
 	spin_unlock_irqrestore(&port->lock, flags);

@@ -32,16 +32,20 @@ static int try_to_freeze_tasks(bool user_only)
 {
 	struct task_struct *g, *p;
 	unsigned long end_time;
+	unsigned long end_time_print;
 	unsigned int todo;
 	bool wq_busy = false;
 	ktime_t start, end, elapsed;
 	unsigned int elapsed_msecs;
 	bool wakeup = false;
 	int sleep_usecs = USEC_PER_MSEC;
+	unsigned int freeze_timeout_print_warn_msecs = 8 * MSEC_PER_SEC;
+	unsigned int has_printed = 0;
 
 	start = ktime_get_boottime();
 
 	end_time = jiffies + msecs_to_jiffies(freeze_timeout_msecs);
+	end_time_print = jiffies + msecs_to_jiffies(freeze_timeout_print_warn_msecs);
 
 	if (!user_only)
 		freeze_workqueues_begin();
@@ -71,6 +75,31 @@ static int try_to_freeze_tasks(bool user_only)
 			break;
 		}
 
+#ifdef APTIV_SUSPEND_FAIL_PRINT
+		/* warn if after 8 sec the vip timeout is approaching */
+		if ((!has_printed) && todo && time_after(jiffies, end_time_print)) {
+
+			end = ktime_get_boottime();
+			elapsed = ktime_sub(end, start);
+			elapsed_msecs = ktime_to_ms(elapsed);
+
+			printk(KERN_EMERG "Continue freezing of tasks after %d.%03d seconds"
+			       " (%d tasks refusing to freeze, wq_busy=%d):\n list of tasks:\n",
+			       elapsed_msecs / 1000, elapsed_msecs % 1000,
+			       todo - wq_busy, wq_busy);
+
+			for_each_process_thread(g, p) {
+				if (p == current || !freeze_task(p))
+					continue;
+
+				if (!freezer_should_skip(p)) {
+					printk(KERN_EMERG " + %s\n", p->comm);
+				}
+			}
+			has_printed = 1;
+		}
+#endif
+
 		/*
 		 * We need to retry, but first give the freezing tasks some
 		 * time to enter the refrigerator.  Start with an initial
@@ -86,10 +115,16 @@ static int try_to_freeze_tasks(bool user_only)
 	elapsed_msecs = ktime_to_ms(elapsed);
 
 	if (wakeup) {
+#ifdef APTIV_SUSPEND_FAIL_PRINT
+		console_verbose();
+#endif
 		pr_cont("\n");
 		pr_err("Freezing of tasks aborted after %d.%03d seconds",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000);
 	} else if (todo) {
+#ifdef APTIV_SUSPEND_FAIL_PRINT
+		console_verbose();
+#endif
 		pr_cont("\n");
 		pr_err("Freezing of tasks failed after %d.%03d seconds"
 		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
@@ -107,8 +142,13 @@ static int try_to_freeze_tasks(bool user_only)
 		}
 		read_unlock(&tasklist_lock);
 	} else {
+#ifdef APTIV_SUSPEND_FAIL_PRINT
+		printk(KERN_EMERG "(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
+			elapsed_msecs % 1000);
+#else
 		pr_cont("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
 			elapsed_msecs % 1000);
+#endif
 	}
 
 	return todo ? -EBUSY : 0;

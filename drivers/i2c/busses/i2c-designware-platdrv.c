@@ -91,6 +91,9 @@ static int dw_i2c_acpi_configure(struct platform_device *pdev)
 	const char *uid;
 
 	dev->adapter.nr = -1;
+	if (IS_ENABLED(CONFIG_I2C_DESIGNWARE_USE_STATIC_BUS_NUMBERS))
+		device_property_read_u32(&pdev->dev, "i2c-bus-number",
+					 &dev->adapter.nr);
 	dev->tx_fifo_depth = 32;
 	dev->rx_fifo_depth = 32;
 

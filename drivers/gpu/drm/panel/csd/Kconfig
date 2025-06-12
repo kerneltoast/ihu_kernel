@@ -1,0 +1,5 @@
+config DRM_PANEL_VOLVO_CSD
+	tristate "Volvo Cars CSD driver"
+	depends on SERIAL_DEV_BUS
+	help
+	  Support for Volvo Cars Center Stack Displays.

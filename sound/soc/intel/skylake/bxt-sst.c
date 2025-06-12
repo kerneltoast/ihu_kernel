@@ -26,7 +26,7 @@
 
 #define BXT_BASEFW_TIMEOUT	3000
 #define BXT_INIT_TIMEOUT	300
-#define BXT_ROM_INIT_TIMEOUT	70
+#define BXT_ROM_INIT_TIMEOUT	250
 #define BXT_IPC_PURGE_FW	0x01004000
 
 #define BXT_ROM_INIT		0x5
@@ -59,7 +59,7 @@
 /* Delay before scheduling D0i3 entry */
 #define BXT_D0I3_DELAY 5000
 
-#define BXT_FW_INIT_RETRY 10
+#define BXT_FW_INIT_RETRY 100
 
 #define GET_SSP_BASE(N)	(N > 4 ? 0x2000 : 0x4000)
 
@@ -106,6 +106,7 @@ bxt_load_library(struct sst_dsp *ctx, struct skl_lib_info *linfo, int lib_count)
 
 	/* library indices start from 1 to N. 0 represents base FW */
 	for (i = 1; i < lib_count; i++) {
+		usleep_range(8000,10000);
 		ret = skl_prepare_lib_load(skl, &skl->lib_info[i], &stripped_fw,
 					BXT_ADSP_FW_BIN_HDR_OFFSET, i);
 		if (ret < 0)

@@ -25,6 +25,7 @@
 #include <linux/console.h>
 #include <linux/vgaarb.h>
 #include <linux/vga_switcheroo.h>
+#include <drm/drm_panel.h>
 
 #include "i915_drv.h"
 #include "i915_selftest.h"
@@ -689,6 +690,7 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct intel_device_info *intel_info =
 		(struct intel_device_info *) ent->driver_data;
+	u32 port_id;
 #ifndef CONFIG_DRM_I915_LOAD_ASYNC_SUPPORT
 	int err;
 #endif
@@ -714,6 +716,41 @@ static int i915_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 */
 	if (vga_switcheroo_client_probe_defer(pdev))
 		return -EPROBE_DEFER;
+
+	for (port_id = 0; port_id < I915_MAX_PORTS; port_id++) {
+		struct fwnode_handle *remote;
+
+		remote = fwnode_graph_get_remote_node(dev_fwnode(&pdev->dev),
+			port_id, 0);
+
+		if (remote) {
+			struct drm_panel *panel;
+
+			panel = fw_drm_find_panel(remote);
+
+			fwnode_handle_put(remote);
+
+			if (IS_ERR(panel)) {
+				if (PTR_ERR(panel) == -EPROBE_DEFER) {
+					dev_info(&pdev->dev, "Deferring probe, waiting for panel\n");
+					return -EPROBE_DEFER;
+				}
+
+				dev_err(&pdev->dev, "Failed to find panel\n");
+			} else {
+				/*
+				 * We don't have any reasonable way to pass
+				 * the panel obtained here to our real load
+				 * function as drvdata is used to detect an
+				 * aborted loading sequence. Therefore we have
+				 * to put it here and hope it doesn't disappear
+				 * meanwhile. In worst case we will print an
+				 * error message later.
+				 */
+				drm_panel_put(panel);
+			}
+		}
+	}
 
 #ifdef CONFIG_DRM_I915_LOAD_ASYNC_SUPPORT
 	i915_driver_load_async(pdev, ent);

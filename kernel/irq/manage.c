@@ -963,6 +963,7 @@ irq_thread_check_affinity(struct irq_desc *desc, struct irqaction *action)
 		m = irq_data_get_effective_affinity_mask(&desc->irq_data);
 		cpumask_copy(mask, m);
 	} else {
+		set_bit(IRQTF_AFFINITY, &action->thread_flags);
 		valid = false;
 	}
 	raw_spin_unlock_irq(&desc->lock);

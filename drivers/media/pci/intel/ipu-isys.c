@@ -43,6 +43,18 @@ static bool csi2_port_optimized = true;
 module_param(csi2_port_optimized, bool, 0660);
 MODULE_PARM_DESC(csi2_port_optimized, "IPU CSI2 port optimization");
 
+/*
+ * VCC: Track the outcome of the probing. This value is not necessarily the
+ * value returned by isys_probe() since the original driver version ignores if
+ * isys_register_ext_subdev(), called from isys_register_ext_subdevs(),
+ * fails. Thus, in this case isys_probe() would return 0 but
+ * v4l2_i2c_new_subdev_board() could still have failed, which is the issue being
+ * worked around.
+ */
+static int probe_result = -EINVAL;
+module_param(probe_result, int, 0444);
+MODULE_PARM_DESC(probe_result, "IPU isys probe result");
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 6, 0)
 /*
  * BEGIN adapted code from drivers/media/platform/omap3isp/isp.c.
@@ -437,17 +449,25 @@ skip_put_adapter:
 	return rval;
 }
 
-static void isys_register_ext_subdevs(struct ipu_isys *isys)
+static int isys_register_ext_subdevs(struct ipu_isys *isys)
 {
 	struct ipu_isys_subdev_pdata *spdata = isys->pdata->spdata;
 	struct ipu_isys_subdev_info **sd_info;
-
+	int rval = 0;
+	
 	if (!spdata) {
 		dev_info(&isys->adev->dev, "no subdevice info provided\n");
-		return;
+		return rval;
 	}
-	for (sd_info = spdata->subdevs; *sd_info; sd_info++)
-		isys_register_ext_subdev(isys, *sd_info);
+	for (sd_info = spdata->subdevs; *sd_info; sd_info++) {
+		const int rval_ext_subdev = isys_register_ext_subdev(isys, *sd_info);
+		if (rval_ext_subdev) {
+			printk(KERN_EMERG "VCC: ipu4-isys isys_register_ext_subdev failed\n");
+			rval = rval_ext_subdev;
+		}
+	}
+
+	return rval;
 }
 
 static void isys_unregister_subdevices(struct ipu_isys *isys)
@@ -691,7 +711,7 @@ static int isys_register_devices(struct ipu_isys *isys)
 	if (rval)
 		goto out_v4l2_device_unregister;
 
-	isys_register_ext_subdevs(isys);
+	probe_result = isys_register_ext_subdevs(isys);
 
 	rval = v4l2_device_register_subdev_nodes(&isys->v4l2_dev);
 	if (rval)
@@ -819,6 +839,23 @@ static void isys_remove(struct ipu_bus_device *adev)
 	struct ipu_isys *isys = ipu_bus_get_drvdata(adev);
 	struct ipu_device *isp = adev->isp;
 	struct isys_fw_msgs *fwmsg, *safe;
+
+	if (VCC_PREALLOC_PAC_BUFFERS) {
+		int i;
+		struct ipu_bus_device *ipbus = adev; // is isp->isys
+
+		printk(KERN_INFO "VCC: release preallocated buffers\n");
+		for (i = 0; i < VCC_PREALLOC_PAC_BUFFER_COUNT; i++) {
+			if (ipbus->pre[i].vaddr) {
+				ipbus->dev.dma_ops->free(
+					&ipbus->dev, VCC_PREALLOC_PAC_BUFFER_SIZE,
+					ipbus->pre[i].vaddr,
+					ipbus->pre[i].dma_handler, 0);
+				ipbus->pre[i].vaddr = 0;
+				ipbus->pre[i].taken = 0;
+			}
+		}
+	}
 
 	dev_info(&adev->dev, "removed\n");
 	if (isp->ipu_dir)
@@ -1058,12 +1095,15 @@ static int isys_probe(struct ipu_bus_device *adev)
 	/* Has the domain been attached? */
 	if (!mmu || !isp->pkg_dir_dma_addr) {
 		trace_printk("E|TMWK\n");
+		probe_result = -EPROBE_DEFER;
 		return -EPROBE_DEFER;
 	}
 
 	isys = devm_kzalloc(&adev->dev, sizeof(*isys), GFP_KERNEL);
-	if (!isys)
+	if (!isys) {
+		probe_result = -ENOMEM;
 		return -ENOMEM;
+	}
 
 	/* By default, short packet is captured from T-Unit. */
 #if defined(CONFIG_VIDEO_INTEL_IPU4) || defined(CONFIG_VIDEO_INTEL_IPU4P)
@@ -1082,8 +1122,10 @@ static int isys_probe(struct ipu_bus_device *adev)
 	    dma_alloc_attrs(&adev->dev, trace_size, trace_dma_addr,
 			    GFP_KERNEL, attrs);
 #endif
-	if (!isys->short_packet_trace_buffer)
+	if (!isys->short_packet_trace_buffer) {
+		probe_result = -ENOMEM;
 		return -ENOMEM;
+	}
 #else
 	isys->short_packet_source = IPU_ISYS_SHORT_PACKET_FROM_RECEIVER;
 #endif
@@ -1153,6 +1195,27 @@ static int isys_probe(struct ipu_bus_device *adev)
 	if (rval)
 		goto out_remove_pkg_dir_shared_buffer;
 
+	if (VCC_PREALLOC_PAC_BUFFERS) {
+		int i;
+		struct ipu_bus_device *ipbus = adev; // is isp->isys
+		struct device *aiommu = ipbus->iommu;
+		struct ipu_mmu *mmu = dev_get_drvdata(aiommu);
+
+		if (mmu && mmu->dmap && mmu->ready) {
+			printk(KERN_INFO "VCC: preallocate %d buffers\n", VCC_PREALLOC_PAC_BUFFER_COUNT);
+			for (i = 0; i < VCC_PREALLOC_PAC_BUFFER_COUNT; i++) {
+				ipbus->pre[i].taken = 0;
+				ipbus->pre[i].vaddr =
+					ipbus->dev.dma_ops->alloc(
+						&ipbus->dev, VCC_PREALLOC_PAC_BUFFER_SIZE,
+						&(ipbus->pre[i].dma_handler), GFP_KERNEL,
+						0 | DMA_ATTR_VCC_PREALLOC_PAC);
+			}
+		} else {
+			printk(KERN_EMERG "VCC: mmu not ready, has probing order changed?\n");
+		}
+	}
+
 	trace_printk("E|TMWK\n");
 	return 0;
 
@@ -1188,6 +1251,7 @@ release_firmware:
 #endif
 	}
 
+	probe_result = rval;
 	return rval;
 }
 

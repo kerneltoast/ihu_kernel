@@ -43,6 +43,10 @@ obj-$(CONFIG_MXC6255)		+= mxc6255.o
 
 obj-$(CONFIG_SCA3000)		+= sca3000.o
 
+obj-$(CONFIG_SMI130_ACCEL) += smi130-accel-core.o
+obj-$(CONFIG_SMI130_ACCEL_I2C) += smi130-accel-i2c.o
+obj-$(CONFIG_SMI130_ACCEL_SPI) += smi130-accel-spi.o
+
 obj-$(CONFIG_STK8312)		+= stk8312.o
 obj-$(CONFIG_STK8BA50)		+= stk8ba50.o
 

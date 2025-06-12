@@ -117,6 +117,14 @@ subprojects.
 
    filesystems/ext4/index
 
+CSD driver Documentation
+------------------------
+
+.. toctree::
+   :maxdepth: 2
+
+   csd/index
+
 Translations
 ------------
 

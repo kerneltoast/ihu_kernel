@@ -67,7 +67,12 @@
  * Grace period we give before making sure all current interfaces reside on
  * channels allowed by the current regulatory domain.
  */
+
+#ifdef CONFIG_APTIV_VGTT_SEM
+#define REG_ENFORCE_GRACE_MS 90000
+#else
 #define REG_ENFORCE_GRACE_MS 60000
+#endif
 
 /**
  * enum reg_request_treatment - regulatory request treatment

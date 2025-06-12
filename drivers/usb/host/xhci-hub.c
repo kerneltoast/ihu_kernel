@@ -610,6 +610,9 @@ static void xhci_port_set_test_mode(struct xhci_hcd *xhci,
 	xhci->test_mode = test_mode;
 	if (test_mode == TEST_FORCE_EN)
 		xhci_start(xhci);
+	else {
+		usb_hc_died(xhci_to_hcd(xhci));
+	}
 }
 
 static int xhci_enter_test_mode(struct xhci_hcd *xhci,
@@ -631,6 +634,13 @@ static int xhci_enter_test_mode(struct xhci_hcd *xhci,
 				 i, retval);
 	}
 	spin_lock_irqsave(&xhci->lock, *flags);
+
+	/* Stop the controller */
+	xhci_dbg(xhci, "Stop controller\n");
+	retval = xhci_halt(xhci);
+	if (retval)
+		return retval;
+
 	/* Put all ports to the Disable state by clear PP */
 	xhci_dbg(xhci, "Disable all port (PP = 0)\n");
 	/* Power off USB3 ports*/
@@ -639,18 +649,16 @@ static int xhci_enter_test_mode(struct xhci_hcd *xhci,
 	/* Power off USB2 ports*/
 	for (i = 0; i < xhci->usb2_rhub.num_ports; i++)
 		xhci_set_port_power(xhci, xhci->main_hcd, i, false, flags);
-	/* Stop the controller */
-	xhci_dbg(xhci, "Stop controller\n");
-	retval = xhci_halt(xhci);
-	if (retval)
-		return retval;
+
 	/* Disable runtime PM for test mode */
 	pm_runtime_forbid(xhci_to_hcd(xhci)->self.controller);
 	/* Set PORTPMSC.PTC field to enter selected test mode */
-	/* Port is selected by wIndex. port_id = wIndex + 1 */
-	xhci_dbg(xhci, "Enter Test Mode: %d, Port_id=%d\n",
-					test_mode, wIndex + 1);
 	xhci_port_set_test_mode(xhci, test_mode, wIndex);
+
+	/* Port is selected by wIndex. port_id = wIndex + 1 */
+	xhci_info(xhci, "Enter Test Mode: %d, Port_id=%d\n",
+					test_mode, wIndex + 1);
+
 	return retval;
 }
 

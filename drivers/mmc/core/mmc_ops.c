@@ -355,7 +355,7 @@ int mmc_send_cid(struct mmc_host *host, u32 *cid)
 
 int mmc_get_ext_csd(struct mmc_card *card, u8 **new_ext_csd)
 {
-	int err;
+	int err, i;
 	u8 *ext_csd;
 
 	if (!card || !new_ext_csd)
@@ -372,8 +372,14 @@ int mmc_get_ext_csd(struct mmc_card *card, u8 **new_ext_csd)
 	if (!ext_csd)
 		return -ENOMEM;
 
-	err = mmc_send_cxd_data(card, card->host, MMC_SEND_EXT_CSD, ext_csd,
-				512);
+    for (i = 10; i; i--) {
+        err = mmc_send_cxd_data(card, card->host, MMC_SEND_EXT_CSD, ext_csd,
+            512);
+        if(!err) break;
+        mmc_delay(5);
+        pr_err("EMMC cmd8 retry, [ANY-4314][AII-18014] %s %d\n", __FUNCTION__, __LINE__);
+    }
+
 	if (err)
 		kfree(ext_csd);
 	else

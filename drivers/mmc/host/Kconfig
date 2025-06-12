@@ -104,6 +104,19 @@ config MMC_RICOH_MMC
 
 	  If unsure, say Y.
 
+config MMC_SDHCI_PCI_USE_FULL_PWR_CYCLE
+	bool "Force power off notify when going to S3 state"
+	depends on MMC_SDHCI_PCI
+	default n
+	help
+	  Usually CMD5 (SLEEP_AWAKE) is send when going to suspend to RAM.
+	  A power off notify is send only when shutting down (e.g. S5).
+	  In case the power supply to the eMMC is turned off during S3
+	  sending a power off notification is preferable as it improves
+	  start-up time when resuming from S3.
+
+	  If unsure, say N.
+
 config MMC_SDHCI_ACPI
 	tristate "SDHCI support for ACPI enumerated SDHCI controllers"
 	depends on MMC_SDHCI && ACPI

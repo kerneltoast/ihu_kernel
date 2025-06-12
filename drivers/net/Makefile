@@ -80,3 +80,7 @@ thunderbolt-net-y += thunderbolt.o
 obj-$(CONFIG_THUNDERBOLT_NET) += thunderbolt-net.o
 obj-$(CONFIG_NETDEVSIM) += netdevsim/
 obj-$(CONFIG_NET_FAILOVER) += net_failover.o
+
+obj-$(CONFIG_TOSHIBA_PCIE_EMAC) += TOSHIBA_PCIe_EMAC_Driver/
+
+obj-$(CONFIG_BCM89230_ETHSWITCH_MOD) += ethswitch/

@@ -57,6 +57,7 @@
 #define PORT_ALTR_16550_F128 28 /* Altera 16550 UART with 128 FIFOs */
 #define PORT_RT2880	29	/* Ralink RT2880 internal UART */
 #define PORT_16550A_FSL64 30	/* Freescale 16550 UART with 64 FIFOs */
+#define PORT_16550A_DW	31	/* Designware with THRE mode enabled */
 
 /*
  * ARM specific type numbers.  These are not currently guaranteed

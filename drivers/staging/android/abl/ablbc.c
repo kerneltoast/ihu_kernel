@@ -91,11 +91,14 @@ struct nvram_msg {
 	uint32_t crc;
 } __packed;
 
+#define BOOT_TARGET_GPIO_SELECTED   -1
+#define BOOT_TARGET_INVALID         -2
+
 static const struct name2id NAME2ID[] = {
 	{ "main",	0x00 },
 	{ "android",	0x00 },
 	{ "adb",        0x00 },
-	{ "shell",      0x00 },
+	{ "shell",      BOOT_TARGET_GPIO_SELECTED },
 	{ "bootloader",	0x01 },
 	{ "fastboot",	0x01 },
 	{ "elk",	0x02 },
@@ -103,6 +106,7 @@ static const struct name2id NAME2ID[] = {
 	{ "dm-verity device corrupted",	0x03 },
 	{ "crashmode",	0x04 },
 	{ "dnx",	0x05 },
+	{ "imb",	0x06 },
 	{ "cli",	0x10 },
 };
 
@@ -249,7 +253,7 @@ static int reboot_target_name2id(const char *name)
 		if (!strcmp(NAME2ID[i].name, name))
 			return NAME2ID[i].id;
 
-	return -EINVAL;
+	return BOOT_TARGET_INVALID;
 }
 
 static int set_reboot_target(const char *name)
@@ -266,6 +270,11 @@ static int set_reboot_target(const char *name)
 
 	id  = reboot_target_name2id(name);
 	if (id < 0) {
+		if (id == BOOT_TARGET_GPIO_SELECTED) {
+			// keep NVRAM empty, use boot mode defined by GPIOs
+			return 0;
+		}
+
 		pr_err("Error in %s: '%s' is not a valid target\n",
 		       __func__, name);
 		return -EINVAL;

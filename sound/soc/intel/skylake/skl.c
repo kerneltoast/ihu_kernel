@@ -27,6 +27,15 @@
 #include <linux/platform_device.h>
 #include <linux/firmware.h>
 #include <linux/delay.h>
+#include <linux/irq.h>
+#include <linux/kthread.h>
+#include <linux/module.h>
+#include <linux/interrupt.h>
+#include <linux/irqdomain.h>
+#include <linux/sched.h>
+#include <linux/sched/rt.h>
+#include <linux/sched/task.h>
+#include <uapi/linux/sched/types.h>
 #include <sound/pcm.h>
 #include <sound/soc-acpi.h>
 #include <sound/soc-acpi-intel-match.h>
@@ -322,6 +331,8 @@ static irqreturn_t skl_threaded_handler(int irq, void *dev_id)
 static int skl_acquire_irq(struct hdac_bus *bus, int do_disconnect)
 {
 	struct skl *skl = bus_to_skl(bus);
+	struct irq_desc *desc;
+	struct irqaction *action;
 	int ret;
 
 	ret = request_threaded_irq(skl->pci->irq, skl_interrupt,
@@ -334,6 +345,20 @@ static int skl_acquire_irq(struct hdac_bus *bus, int do_disconnect)
 			skl->pci->irq);
 		return ret;
 	}
+
+	/* vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
+	/* aptiv patch */
+	desc = irq_to_desc(skl->pci->irq);
+	if (desc) {
+		action = desc->action;
+		if (action && action->thread) {
+			struct sched_param param = {
+				.sched_priority = MAX_USER_RT_PRIO/2 + 5,
+			};
+			sched_setscheduler_nocheck(action->thread, SCHED_FIFO, &param);
+		}
+	}
+	/* ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 	bus->irq = skl->pci->irq;
 	pci_intx(skl->pci, 1);
@@ -864,6 +889,13 @@ static void skl_probe_work(struct work_struct *work)
 	/* codec detection */
 	if (!bus->codec_mask)
 		dev_info(bus->dev, "no hda codecs found!\n");
+	else {
+		/* Workaround to timing issue related to CSD/DRM changes. */
+		dev_warn(bus->dev,
+			"hda codecs found, ignoring and clearing codec_mask: 0x%lx!",
+			bus->codec_mask);
+		bus->codec_mask = 0;
+	}
 
 	/* create codec instances */
 	skl_codec_create(bus);

@@ -23,6 +23,15 @@
 #include <linux/interrupt.h>
 #include <linux/time.h>
 #include <linux/slab.h>
+#include <linux/irq.h>
+#include <linux/kthread.h>
+#include <linux/module.h>
+#include <linux/interrupt.h>
+#include <linux/irqdomain.h>
+#include <linux/sched.h>
+#include <linux/sched/rt.h>
+#include <linux/sched/task.h>
+#include <uapi/linux/sched/types.h>
 
 #include "../pci.h"
 #include "pciehp.h"
@@ -39,6 +48,8 @@ static int pciehp_poll(void *data);
 static inline int pciehp_request_irq(struct controller *ctrl)
 {
 	int retval, irq = ctrl->pcie->irq;
+	struct irq_desc *desc;
+	struct irqaction *action;
 
 	if (pciehp_poll_mode) {
 		ctrl->poll_thread = kthread_run(&pciehp_poll, ctrl,
@@ -53,6 +64,22 @@ static inline int pciehp_request_irq(struct controller *ctrl)
 	if (retval)
 		ctrl_err(ctrl, "Cannot get irq %d for the hotplug controller\n",
 			 irq);
+
+	/* vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
+	/* aptiv patch */
+	desc = irq_to_desc(irq);
+	if (desc) {
+		for (action = desc->action; action; action = action->next) {
+			if (action && action->thread && action->thread_fn == pciehp_ist) {
+				struct sched_param param = {
+					.sched_priority = MAX_USER_RT_PRIO/2 - 2,
+				};
+				sched_setscheduler_nocheck(action->thread, SCHED_FIFO, &param);
+			}
+		}
+	}
+	/* ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
+
 	return retval;
 }
 

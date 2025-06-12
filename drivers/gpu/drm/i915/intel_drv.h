@@ -408,6 +408,9 @@ struct intel_connector {
 	/* Panel info for eDP and LVDS */
 	struct intel_panel panel;
 
+	/* Panel for HDMI */
+	struct drm_panel *drm_panel;
+
 	/* Cached EDID for eDP and LVDS. May hold ERR_PTR for invalid EDID. */
 	struct edid *edid;
 	struct edid *detect_edid;

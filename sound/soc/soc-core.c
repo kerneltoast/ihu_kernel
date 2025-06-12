@@ -1277,7 +1277,8 @@ static int soc_probe_component(struct snd_soc_card *card,
 	int ret;
 
 	if (!strcmp(component->name, "snd-soc-dummy") &&
-		!IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH))
+		!IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH) &&
+		!IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_VOLVO_SID_MACH))
 		return 0;
 
 	if (component->card) {

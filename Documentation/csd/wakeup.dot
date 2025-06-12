@@ -1,0 +1,40 @@
+digraph wakeup {
+	"<ANY_PREVIOUS>" [shape=Mdiamond, fontcolor=gray, color=gray]
+	"<ANY_PREVIOUS>" -> CSD_POWERING_ON [fontcolor=green, color=green, style=bold]
+
+	CSD_POWERING_ON [fontcolor=green, color=green]
+	CSD_POWERING_ON -> CSD_PBL [label="INT_IRQ (high) -> PBL", fontcolor=green, color=green, style=bold]
+	CSD_POWERING_ON -> RESETTING_CSD [label="INT_IRQ (high) -> non-PBL ||\n(TIMEOUT && ee_mode)", fontcolor=red, color=red]
+	CSD_POWERING_ON -> CONVERTER [label="TIMEOUT &&\n!ee_mode &&\nconverter"]
+	CSD_POWERING_ON -> RESET_SER [label="INT_IRQ (high) -> reading int status failed ||\n(TIMEOUT && !ee_mode && !converter)", fontcolor=red, color=red]
+
+	CSD_PBL [fontcolor=green, color=green]
+	CSD_PBL -> CSD_PBL_APP_EARLY [label="INT_IRQ (low) &&\n!prog_signature", fontcolor=green, color=green, style=bold]
+	CSD_PBL -> CSD_PROG [label="INT_IRQ (low) &&\nprog_signature"]
+	CSD_PBL -> RESETTING_CSD [label="TIMEOUT", fontcolor=red, color=red]
+
+	CSD_PBL_APP_EARLY [fontcolor=green, color=green]
+	CSD_PBL_APP_EARLY -> CSD_APP [label="INT_IRQ (high) -> APP", fontcolor=green, color=green, style=bold]
+	CSD_PBL_APP_EARLY -> RESETTING_CSD [label="INT_IRQ (high) -> non-APP ||\nINT_IRQ (high) -> reading int status failed", fontcolor=red, color=red]
+	CSD_PBL_APP_EARLY -> CSD_PBL_APP_LATE [label="TIMEOUT (/2)"]
+
+	CSD_PBL_APP_LATE [fontcolor=green, color=green]
+	CSD_PBL_APP_LATE -> CSD_APP [label="INT_IRQ (high) -> APP", fontcolor=green, color=green, style=bold]
+	CSD_PBL_APP_LATE -> RESETTING_CSD [label="INT_IRQ (high) -> non-APP ||\nINT_IRQ (high) -> reading int status failed ||\nTIMEOUT (/2)", fontcolor=red, color=red]
+	CSD_PBL_APP_LATE -> CSD_PROG [label="diag prog request"]
+
+	CSD_APP [fontcolor=green, color=green]
+	CSD_APP -> IDLE [label="INT_IRQ (low)", fontcolor=green, color=green, style=bold]
+	CSD_APP -> RESET_SER [label="getting display status failed ||\npost wakeup config failed", fontcolor=red, color=red]
+	CSD_APP -> RESETTING_CSD [label="TIMEOUT", fontcolor=red, color=red]
+
+	CSD_PROG [fontcolor=gray, color=gray]
+
+	RESETTING_CSD [fontcolor=gray, color=gray]
+
+	CONVERTER [fontcolor=gray, color=gray]
+
+	RESET_SER [fontcolor=gray, color=gray]
+
+	IDLE [shape=Msquare, fontcolor=gray, color=gray]
+}

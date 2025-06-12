@@ -649,7 +649,7 @@ setup_scratch_page(struct i915_address_space *vm, gfp_t gfp)
 		size = I915_GTT_PAGE_SIZE_64K;
 		gfp |= __GFP_NOWARN;
 	}
-	gfp |= __GFP_ZERO;
+	gfp |= __GFP_ZERO | __GFP_RETRY_MAYFAIL;
 
 	do {
 		int order = get_order(size);

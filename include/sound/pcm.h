@@ -1194,6 +1194,8 @@ static inline void snd_pcm_set_runtime_buffer(struct snd_pcm_substream *substrea
 		runtime->dma_addr = bufp->addr;
 		runtime->dma_bytes = bufp->bytes;
 	} else {
+//		printk(KERN_ERR "xxx: %s:%d substream %s rt %px dma_buffer %px\n", __func__, __LINE__, substream->name, runtime, runtime->dma_buffer_p);
+//		dump_stack();
 		runtime->dma_buffer_p = NULL;
 		runtime->dma_area = NULL;
 		runtime->dma_addr = 0;

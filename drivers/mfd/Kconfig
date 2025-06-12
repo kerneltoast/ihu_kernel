@@ -586,6 +586,84 @@ config MFD_INTEL_LPSS_PCI
 	  I2C, SPI and HS-UART starting from Intel Sunrisepoint (Intel Skylake
 	  PCH) in PCI mode.
 
+config MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS
+	bool "Use static bus numbers on Intel Low Power Subsystem"
+	default n
+	depends on MFD_INTEL_LPSS_PCI
+	depends on I2C_DESIGNWARE_USE_STATIC_BUS_NUMBERS
+	depends on I2C_LAST_STATIC_BUS_NUM >= 7
+	help
+	  Assign static numbers to the busses on the DesignWare I2C adapter.
+
+menu "DesignWare I2C bus numbers"
+	depends on MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_1
+	int "number of first I2C bus"
+	default 0
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the first
+	  bus on the I2C adapter.
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_2
+	int "number of second I2C bus"
+	default 1
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the second
+	  bus on the I2C adapter.
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_3
+	int "number of third I2C bus"
+	default 2
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the third
+	  bus on the I2C adapter.
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_4
+	int "number of fourth I2C bus"
+	default 3
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the fourth
+	  bus on the I2C adapter.
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_5
+	int "number of fifth I2C bus"
+	default 4
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the fifth
+	  bus on the I2C adapter.
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_6
+	int "number of sixth I2C bus"
+	default 5
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the sixth
+	  bus on the I2C adapter.
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_7
+	int "number of seventh I2C bus"
+	default 6
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the seventh
+	  bus on the I2C adapter.
+
+config MFD_INTEL_LPSS_PCI_NUMBER_OF_I2C_BUS_8
+	int "number of eighth I2C bus"
+	default 7
+	range 0 I2C_LAST_STATIC_BUS_NUM
+	help
+	  The number defined here will be assigned to the eighth
+	  bus on the I2C adapter.
+
+endmenu
+
 config MFD_INTEL_MSIC
 	bool "Intel MSIC"
 	depends on INTEL_SCU_IPC
@@ -1898,6 +1976,13 @@ config RAVE_SP_CORE
 	help
 	  Select this to get support for the Supervisory Processor
 	  device found on several devices in RAVE line of hardware.
+
+config IDT_P91E0A
+	tristate "Support for IDT PMIC P91E0A"
+	depends on INTEL_PMC_IPC
+	select REGMAP
+	help
+	  Select this option to enable support for IDT PMIC P91E0A.
 
 endmenu
 endif

@@ -903,8 +903,7 @@ struct skl_debug *skl_debugfs_init(struct skl *skl)
 
 	mutex_init(&d->fw_ipc_data.mutex);
 	/* create the debugfs dir with platform component's debugfs as parent */
-	d->fs = debugfs_create_dir("dsp",
-				   skl->component->debugfs_root);
+	d->fs = debugfs_create_dir("snd_soc_skl", NULL);
 	if (IS_ERR(d->fs) || !d->fs) {
 		dev_err(&skl->pci->dev, "debugfs root creation failed\n");
 		return NULL;

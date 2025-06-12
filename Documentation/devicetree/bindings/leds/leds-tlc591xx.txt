@@ -6,6 +6,13 @@ Required properties
 - #size-cells: must be 0
 - reg: typically 0x68
 
+Optional properties
+- use-group-brightness-mode: set this boolean property if you want to use
+    a global brightness setting for all channels rather than define individual
+    child led nodes.
+- use-low-current-multiplier: set this boolean property if you want to disable
+    the high-current gain multiplier in the output gain control register.
+
 Each led is represented as a sub-node of the ti,tlc59116.
 See Documentation/devicetree/bindings/leds/common.txt
 

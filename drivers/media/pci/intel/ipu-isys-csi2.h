@@ -77,7 +77,7 @@ struct ipu_isys;
 #define CSI2_CSI_RX_DLY_CNT_SETTLE_DLANE_A		85
 #define CSI2_CSI_RX_DLY_CNT_SETTLE_DLANE_B		-2
 
-#define IPU_EOF_TIMEOUT 300
+#define IPU_EOF_TIMEOUT 150  // ARTINFO-27777: Lower timeout to manage WAM power mode change
 #define IPU_EOF_TIMEOUT_JIFFIES msecs_to_jiffies(IPU_EOF_TIMEOUT)
 
 /*

@@ -313,3 +313,10 @@ config ENERGY_MODEL
 	  The exact usage of the energy model is subsystem-dependent.
 
 	  If in doubt, say N.
+
+config APTIV_SUSPEND_FAIL_PRINT
+	bool "Print suspend messages on failure"
+	depends on SUSPEND
+	default n
+	---help---
+	Print suspend messages on failure

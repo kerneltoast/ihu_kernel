@@ -12,6 +12,8 @@ ccflags-$(CONFIG_VIDEO_INTEL_IPU_WERROR) += -Werror
 crlmodule-objs			+= crlmodule-core.o crlmodule-data.o \
 				   crlmodule-regs.o crlmodule-nvm.o \
 				   crl_adv7481_hdmi_configuration.o \
+				   crl_max9288_configuration.o \
+				   crl_adv7281_cvbs_configuration.o \
 				   crlmodule-msrlist.o
 obj-$(CONFIG_VIDEO_CRLMODULE)	+= crlmodule.o
 

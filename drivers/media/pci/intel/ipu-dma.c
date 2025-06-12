@@ -12,6 +12,7 @@
 #include <linux/module.h>
 #include <linux/scatterlist.h>
 #include <linux/vmalloc.h>
+#include <linux/printk.h>
 
 #include "ipu-dma.h"
 #include "ipu-mmu.h"
@@ -182,6 +183,22 @@ static void *ipu_dma_alloc(struct device *dev, size_t size,
 	int i;
 	int rval;
 
+	if (VCC_PREALLOC_PAC_BUFFERS &&
+	    size == VCC_PREALLOC_PAC_BUFFER_SIZE &&
+	    !(attrs & DMA_ATTR_VCC_PREALLOC_PAC))
+	{
+		int i;
+		struct ipu_bus_device *ipbus = to_ipu_bus_device(dev);
+		for (i = 0; i < VCC_PREALLOC_PAC_BUFFER_COUNT; i++) {
+			if (!ipbus->pre[i].taken && ipbus->pre[i].vaddr) {
+				printk(KERN_INFO "VCC: use preallocated buffer %d\n", i);
+				ipbus->pre[i].taken = 1;
+				*dma_handle = ipbus->pre[i].dma_handler;
+				return ipbus->pre[i].vaddr;
+			}
+		}
+	}
+
 	size = PAGE_ALIGN(size);
 
 	iova = alloc_iova(&mmu->dmap->iovad, size >> PAGE_SHIFT,
@@ -257,6 +274,18 @@ static void ipu_dma_free(struct device *dev, size_t size, void *vaddr,
 	if (WARN_ON(!iova))
 		return;
 
+	if (VCC_PREALLOC_PAC_BUFFERS) {
+		int i;
+		struct ipu_bus_device *ipbus = to_ipu_bus_device(dev);
+		for (i = 0; i < VCC_PREALLOC_PAC_BUFFER_COUNT; i++) {
+			if (ipbus->pre[i].taken && ipbus->pre[i].vaddr == vaddr) {
+				printk(KERN_INFO "VCC: free preallocated buffer %d\n", i);
+				ipbus->pre[i].taken = 0;
+				goto out;
+			}
+		}
+	}
+
 	size = PAGE_ALIGN(size);
 
 	pages = area->pages;
@@ -270,6 +299,7 @@ static void ipu_dma_free(struct device *dev, size_t size, void *vaddr,
 
 	__free_iova(&mmu->dmap->iovad, iova);
 
+out:
 	mmu->tlb_invalidate(mmu);
 }
 

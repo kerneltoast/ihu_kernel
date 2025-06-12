@@ -280,13 +280,22 @@ ipu_buttress_ipc_send_bulk(struct ipu_device *isp,
 	u32 val;
 	int ret;
 	int tout;
+	int ipc_retry = 5;
 	unsigned int i, retry = BUTTRESS_IPC_CMD_SEND_RETRY;
 
 	ipc = ipc_domain == IPU_BUTTRESS_IPC_CSE ? &b->cse : &b->ish;
 
 	mutex_lock(&b->ipc_mutex);
 
-	ret = ipu_buttress_ipc_validity_open(isp, ipc);
+	while (ipc_retry > 0) {
+		ret = ipu_buttress_ipc_validity_open(isp, ipc);
+
+		if (ret)
+			ipc_retry--;
+		else
+			break;
+	}
+
 	if (ret) {
 		dev_err(&isp->pdev->dev, "IPC validity open failed\n");
 		goto out;

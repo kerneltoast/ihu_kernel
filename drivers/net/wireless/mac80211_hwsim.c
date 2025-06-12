@@ -44,6 +44,8 @@
 #define WARN_QUEUE 100
 #define MAX_QUEUE 200
 
+#define SYSFS_PREFIX "mac80211_hwsim_phy"
+
 MODULE_AUTHOR("Jouni Malinen");
 MODULE_DESCRIPTION("Software simulator of 802.11 radio(s) for mac80211");
 MODULE_LICENSE("GPL");
@@ -584,6 +586,10 @@ struct mac80211_hwsim_data {
 	u64 rx_bytes;
 	u64 tx_dropped;
 	u64 tx_failed;
+
+	/* simulate rssi_signal */
+	int rssi_signal;
+	struct kobject *rssi_signal_kobj_ref;
 };
 
 static const struct rhashtable_params hwsim_rht_params = {
@@ -831,6 +837,58 @@ static int hwsim_fops_ps_write(void *dat, u64 val)
 DEFINE_SIMPLE_ATTRIBUTE(hwsim_fops_ps, hwsim_fops_ps_read, hwsim_fops_ps_write,
 			"%llu\n");
 
+
+
+static ssize_t hwsim_rssi_signal_read(struct kobject *kobj,
+				      struct kobj_attribute *attr, char *buf)
+{
+	long idx;
+	ssize_t result = 0;
+
+	if(strlen(kobj->name) <= strlen(SYSFS_PREFIX))
+	{
+		pr_debug("mac80211_hwsim: expected name with prefix and index\n");
+		return 0;
+	}
+	sscanf(kobj->name + strlen(SYSFS_PREFIX), "%ld", &idx); // advance past prefix and convert to int
+
+	struct mac80211_hwsim_data *data = NULL;
+
+	spin_lock_bh(&hwsim_radio_lock);
+	list_for_each_entry(data, &hwsim_radios, list) {
+		if (data->idx == idx) {
+			result = sprintf(buf, "%d", data->rssi_signal);
+			break;
+		}
+	}
+	spin_unlock_bh(&hwsim_radio_lock);
+
+	return result;
+}
+
+static ssize_t hwsim_rssi_signal_write(struct kobject *kobj,
+				       struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	long idx;
+	struct mac80211_hwsim_data *data = NULL;
+
+	sscanf(kobj->name + strlen(SYSFS_PREFIX), "%ld", &idx); // advance past prefix and convert to int
+
+	spin_lock_bh(&hwsim_radio_lock);
+	list_for_each_entry(data, &hwsim_radios, list) {
+		if (data->idx == idx) {
+			sscanf(buf,"%d", &data->rssi_signal);
+			break;
+		}
+	}
+	spin_unlock_bh(&hwsim_radio_lock);
+
+	return count;
+}
+
+struct kobj_attribute rssi_signal_attr = __ATTR(rssi_signal, 0660, hwsim_rssi_signal_read, hwsim_rssi_signal_write);
+
+
 static int hwsim_write_simulate_radar(void *dat, u64 val)
 {
 	struct mac80211_hwsim_data *data = dat;
@@ -871,7 +929,7 @@ static netdev_tx_t hwsim_mon_xmit(struct sk_buff *skb,
 
 static inline u64 mac80211_hwsim_get_tsf_raw(void)
 {
-	return ktime_to_us(ktime_get_real());
+	return ktime_to_us(ktime_get_boottime());
 }
 
 static __le64 __mac80211_hwsim_get_tsf(struct mac80211_hwsim_data *data)
@@ -1375,10 +1433,17 @@ static bool mac80211_hwsim_tx_frame_no_nl(struct ieee80211_hw *hw,
 		rx_status.bw = RATE_INFO_BW_20;
 	if (info->control.rates[0].flags & IEEE80211_TX_RC_SHORT_GI)
 		rx_status.enc_flags |= RX_ENC_FLAG_SHORT_GI;
-	/* TODO: simulate real signal strength (and optional packet loss) */
-	rx_status.signal = -50;
+	/* Simulate signal strength by injecting value stored in data. This value
+	   can be changed through sysfs. */
+	/* TODO: simulate optional packet loss */
+	rx_status.signal = data->rssi_signal;
+	/*
+	  We comment next section out because rssi signal from TCAM
+	  does not need to be modified.
+	
 	if (info->control.vif)
 		rx_status.signal += info->control.vif->bss_conf.txpower;
+	*/
 
 	if (data->ps != PS_DISABLED)
 		hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_PM);
@@ -2787,6 +2852,15 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	struct net *net;
 	int idx;
 
+	const int sysfs_buffer_length = strlen(SYSFS_PREFIX) + 2 + 1; // strlen(SYSFS_PREFIX) + 2 digits + null termination
+	char sysfs_name[sysfs_buffer_length];
+
+	if (idx > 99) {
+		// can only handle 2 digits due to sysfs_buffer_length defintion above
+		printk(KERN_WARNING "mac80211_hwsim: can only handle up to 100 radios\n");
+		return -EINVAL;
+	}
+
 	if (WARN_ON(param->channels > 1 && !param->use_chanctx))
 		return -EINVAL;
 
@@ -3025,6 +3099,9 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 		schedule_timeout_interruptible(1);
 	}
 
+	/* default rssi signal */
+	data->rssi_signal = -75;
+
 	if (param->no_vif)
 		ieee80211_hw_set(hw, NO_AUTO_VIF);
 
@@ -3050,11 +3127,19 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	}
 
 	data->debugfs = debugfs_create_dir("hwsim", hw->wiphy->debugfsdir);
-	debugfs_create_file("ps", 0666, data->debugfs, data, &hwsim_fops_ps);
-	debugfs_create_file("group", 0666, data->debugfs, data,
+	debugfs_create_file("ps", 0660, data->debugfs, data, &hwsim_fops_ps);
+	debugfs_create_file("group", 0660, data->debugfs, data,
 			    &hwsim_fops_group);
+
+	sprintf(&sysfs_name[0], "%s%d", SYSFS_PREFIX, idx);
+	data->rssi_signal_kobj_ref = kobject_create_and_add(sysfs_name, kernel_kobj);
+	if(sysfs_create_file(data->rssi_signal_kobj_ref, &rssi_signal_attr.attr)){
+		printk(KERN_INFO"Cannot create sysfs file......\n");
+		goto failed_sysfs;
+	}
+
 	if (!data->use_chanctx)
-		debugfs_create_file("dfs_simulate_radar", 0222,
+		debugfs_create_file("dfs_simulate_radar", 0220,
 				    data->debugfs,
 				    data, &hwsim_simulate_radar);
 
@@ -3082,6 +3167,9 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 failed_final_insert:
 	debugfs_remove_recursive(data->debugfs);
 	ieee80211_unregister_hw(data->hw);
+failed_sysfs:
+	kobject_put(data->rssi_signal_kobj_ref);
+	sysfs_remove_file(kernel_kobj, &rssi_signal_attr.attr);
 failed_hw:
 	device_release_driver(data->dev);
 failed_bind:
@@ -3132,6 +3220,8 @@ static void mac80211_hwsim_del_radio(struct mac80211_hwsim_data *data,
 				     struct genl_info *info)
 {
 	hwsim_mcast_del_radio(data->idx, hwname, info);
+        kobject_put(data->rssi_signal_kobj_ref);
+        sysfs_remove_file(kernel_kobj, &rssi_signal_attr.attr);
 	debugfs_remove_recursive(data->debugfs);
 	ieee80211_unregister_hw(data->hw);
 	device_release_driver(data->dev);

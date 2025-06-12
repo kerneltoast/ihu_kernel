@@ -1,0 +1,62 @@
+comment "Multimedia LVDS support"
+menuconfig LVDS_CORE
+	bool "LVDS Gateway Adapters"
+	help
+	  Enable support for LVDS Gateway Adapters on Linux. This is
+	  needed in order to support loading special-purpose drivers
+	  that are behind an LVDS connection.
+
+	  These drivers could be video, audio, capture, or input
+	  devices depending on the capabilities of the gateway IC.
+
+if LVDS_CORE
+
+menuconfig SERDES_TIDS90U
+	tristate "TI DS90U FPD-Link III serdes"
+	depends on I2C
+	help
+	  Support for TI (formerly National Semiconductor) ds90ux9xx
+	  serdes devices.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ds90u.
+
+config SERDES_TIDS90U_I2C
+	bool "Create I2C Adapter"
+	depends on SERDES_TIDS90U
+	default y
+	help
+	  Create an I2C adapter device for communication with clients across
+	  the FPD-Link III connection.
+
+config SERDES_TIDS90U_GPIO
+	bool "Create GPIO Controller"
+	depends on SERDES_TIDS90U && GPIOLIB
+	default n
+	help
+	  Create an GPIO controller device for controlling GPIO outputs across
+	  the FPD-Link III connection.
+
+config SERDES_TIDS90U_LUT
+	bool "Enable Whitebalance LUT"
+	depends on SERDES_TIDS90U
+	default n
+	help
+	  Enables loading a whitebalance LUT firmware blob to send to the
+	  deserializer.
+
+config SERDES_TIDS90U_DRM_BRIDGE
+	bool "Enable DRM bridge functonality"
+	depends on SERDES_TIDS90U
+	default n
+	help
+	  Enables DRM bridge functonality.
+
+config SERDES_TIDS90U_DEBUG
+	bool "Enable Extra Debug Output"
+	depends on SERDES_TIDS90U
+	default n
+	help
+	  Adds -DDEBUG to the compiler flags.
+
+endif #LVDS_CORE

@@ -69,13 +69,16 @@ enum adv76xx_int1_config {
 
 enum adv76xx_page {
 	ADV76XX_PAGE_IO,
-	ADV7604_PAGE_AVLINK,
+	ADV7680_PAGE_VFE,
+	ADV7680_PAGE_APIX_TX = 5,
+	ADV7680_PAGE_APIX_HDCP_TX,
+	ADV7604_PAGE_AVLINK = 8,
 	ADV76XX_PAGE_CEC,
 	ADV76XX_PAGE_INFOFRAME,
 	ADV7604_PAGE_ESDP,
 	ADV7604_PAGE_DPP,
-	ADV76XX_PAGE_AFE,
-	ADV76XX_PAGE_REP,
+	ADV76XX_PAGE_AFE,	/* DPLL */
+	ADV76XX_PAGE_REP,	/* KSV */
 	ADV76XX_PAGE_EDID,
 	ADV76XX_PAGE_HDMI,
 	ADV76XX_PAGE_TEST,
@@ -108,6 +111,8 @@ struct adv76xx_platform_data {
 
 	/* IO register 0x02 */
 	unsigned alt_gamma:1;
+	unsigned op_656_range:1;
+	unsigned alt_data_sat:1;
 
 	/* IO register 0x05 */
 	unsigned blank_data:1;
@@ -153,5 +158,8 @@ enum adv76xx_pad {
 
 /* notify events */
 #define ADV76XX_HOTPLUG		1
+#define ADV76XX_FMT_CHANGE	2
+
+#define ADV76XX_CLI_START_ADDR	0xeb
 
 #endif

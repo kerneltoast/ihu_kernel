@@ -1204,7 +1204,8 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
 	},
 },
-#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH) ||	\
+	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_VOLVO_SID_MACH)
 {
 	.name = "System Pin 3",
 	.ops = &skl_pcm_dai_ops,
@@ -1248,6 +1249,27 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 	},
 },
 {
+   .name = "BTLoop",
+   .ops = &skl_pcm_dai_ops,
+   .capture = {
+      .stream_name = "BtLoopCp",
+      .channels_min = HDA_MONO,
+      .channels_max = HDA_8_CH,
+      .rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+      .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |
+         SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+   },
+   .playback = {
+      .stream_name = "BtLoopPb",
+      .channels_min = HDA_MONO,
+      .channels_max = HDA_8_CH,
+      .rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+      .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+         SNDRV_PCM_FMTBIT_S24_3LE | SNDRV_PCM_FMTBIT_S32_LE |
+         SNDRV_PCM_FMTBIT_FLOAT_LE,
+   },
+},
+{
 	.name = "System Pin 5",
 	.ops = &skl_pcm_dai_ops,
 	.capture = {
@@ -1289,7 +1311,43 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 			SNDRV_PCM_FMTBIT_FLOAT_LE,
 	},
 },
-#endif
+{
+   .name = "AnalogTuner",
+   .ops = &skl_pcm_dai_ops,
+   .capture = {
+      .stream_name = "AnalogTunCp",
+      .channels_min = HDA_MONO,
+      .channels_max = HDA_8_CH,
+      .rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+      .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |
+         SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+   },
+},
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_VOLVO_SID_MACH)
+{
+	.name = "System Pin 7",
+	.ops = &skl_pcm_dai_ops,
+	.capture = {
+		.stream_name = "System Capture 7",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |
+			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+	},
+	.playback = {
+		.stream_name = "System Playback 7",
+		.channels_min = HDA_MONO,
+		.channels_max = HDA_8_CH,
+		.rates = SNDRV_PCM_RATE_8000_192000 | SNDRV_PCM_RATE_KNOT,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S24_LE |
+			SNDRV_PCM_FMTBIT_S24_3LE | SNDRV_PCM_FMTBIT_S32_LE |
+			SNDRV_PCM_FMTBIT_FLOAT_LE,
+	},
+},
+#endif /* CONFIG_SND_SOC_INTEL_BXT_VOLVO_SID_MACH */
+#endif /* CONFIG_SND_SOC_INTEL_BXT_ULL_MACH ||
+	CONFIG_SND_SOC_INTEL_BXT_VOLVO_SID_MACH */
 {
 	.name = "Echoref Pin",
 	.ops = &skl_pcm_dai_ops,
@@ -1410,8 +1468,8 @@ static struct snd_soc_dai_driver skl_fe_dai[] = {
 
 /* BE cpu dais and compress dais*/
 static struct snd_soc_dai_driver skl_platform_dai[] = {
-#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_SOS_TDF8532_MACH) || \
-	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH) || \
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_SOS_TDF8532_MACH) ||	\
+	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_TDF8532_MACH) ||	\
 	IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
 {
 	.name = "SSP5 Pin",
@@ -1434,8 +1492,9 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 	},
 },
 #endif
-#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH)
+#if IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_ULL_MACH ) || IS_ENABLED(CONFIG_SND_SOC_INTEL_BXT_VOLVO_SID_MACH)
 {
+
 	.name = "SSP0-B Pin",
 	.ops = &skl_be_ssp_dai_ops,
 	.playback = {
@@ -1502,6 +1561,38 @@ static struct snd_soc_dai_driver skl_platform_dai[] = {
 		.formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |
 			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
 	},
+},
+{
+   .name = "SSP3-B Pin",
+   .ops = &skl_be_ssp_dai_ops,
+   .playback = {
+      .stream_name = "ssp3 Tx-b",
+      .channels_min = HDA_STEREO,
+      .channels_max = HDA_8_CH,
+      .rates = SNDRV_PCM_RATE_16000,
+      .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |
+         SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+   },
+   .capture = {
+      .stream_name = "ssp3 Rx-b",
+      .channels_min = HDA_STEREO,
+      .channels_max = HDA_8_CH,
+      .rates = SNDRV_PCM_RATE_16000,
+      .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |
+         SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+   },
+},
+{
+   .name = "SSP5-B Pin",
+   .ops = &skl_be_ssp_dai_ops,
+   .capture = {
+      .stream_name = "ssp5 Rx-b",
+      .channels_min = HDA_STEREO,
+      .channels_max = HDA_8_CH,
+      .rates = SNDRV_PCM_RATE_48000,
+      .formats = SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |
+         SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE,
+   },
 },
 #endif
 {

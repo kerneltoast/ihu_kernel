@@ -29,7 +29,10 @@
 #include <linux/regmap.h>
 
 #include <media/i2c/adv7604.h>
+#include <media/i2c/adv7680.h>
 #include <media/cec.h>
+#include <linux/gpio.h>
+
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-event.h>
@@ -40,9 +43,29 @@ static int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "debug level (0-2)");
 
+static int cable_len=2;
+module_param(cable_len, int, 0644);
+MODULE_PARM_DESC(cable_len, " FIR settings for cable length (2 or 5), default=2 (if not specified fir_param)");
+
+static ushort fir_param[ADV7680_FIR_ARRAY_SIZE] = {
+						ADV7680_APIX_TX_PHY_VCC_FIR_C0_VAL,
+						ADV7680_APIX_TX_PHY_VCC_FIR_C1_VAL,
+						ADV7680_APIX_TX_PHY_VCC_FIR_C2_VAL,
+						ADV7680_APIX_TX_PHY_VCC_FIR_C3_VAL,
+						ADV7680_APIX_TX_PHY_VCC_FIR_C4_VAL,
+						ADV7680_APIX_TX_PHY_VCC_FIR_B4_VAL};
+
+static int fir_param_count = 0;
+module_param_array(fir_param, ushort, &fir_param_count, 0644);
+MODULE_PARM_DESC(fir_param, " FIR parameters (c0,c1,c2,c3,c4,b4) ex. fir_param=0x21,0x17,0x24,0x21,0x00,0x00 (default)");
+
+static int mfg_software_id = 0;
+static int mfg_hardware_id = 0;
+
 MODULE_DESCRIPTION("Analog Devices ADV7604 video decoder driver");
 MODULE_AUTHOR("Hans Verkuil <hans.verkuil@cisco.com>");
 MODULE_AUTHOR("Mats Randgaard <mats.randgaard@cisco.com>");
+MODULE_AUTHOR("Piotr Wysokinski <piotr.wysokinski@delphi.com>");
 MODULE_LICENSE("GPL");
 
 /* ADV7604 system clock frequency */
@@ -76,6 +99,7 @@ enum adv76xx_type {
 	ADV7604,
 	ADV7611,
 	ADV7612,
+	ADV7680,
 };
 
 struct adv76xx_reg_seq {
@@ -108,6 +132,7 @@ struct adv76xx_chip_info {
 	unsigned int edid_enable_reg;
 	unsigned int edid_status_reg;
 	unsigned int lcf_reg;
+	u16 lcf_mask;
 
 	unsigned int cable_det_mask;
 	unsigned int tdms_lock_mask;
@@ -225,6 +250,35 @@ struct adv76xx_video_standards {
 	struct v4l2_dv_timings timings;
 	u8 vid_std;
 	u8 v_freq;
+};
+
+/* sorted by number of lines */
+static const struct adv76xx_video_standards adv7680_prim_mode_hdmi_comp[] = {
+	{ V4L2_DV_BT_CEA_720X480P59_94, 0x0a, 0x00 },
+	{ V4L2_DV_BT_CEA_720X576P50, 0x0b, 0x00 },
+	{ V4L2_DV_BT_CEA_1280X720P50, 0x13, 0x01 },
+	{ V4L2_DV_BT_CEA_1280X720P60, 0x13, 0x00 },
+	{ V4L2_DV_BT_CEA_1280X720P30, 0x13, 0x02 },
+	{ V4L2_DV_BT_CEA_1280X720P25, 0x13, 0x03 },
+	{ V4L2_DV_BT_CEA_1280X720P24, 0x13, 0x04 },
+	{ V4L2_DV_BT_CEA_1920X1080I60, 0x14, 0x00 },
+	{ V4L2_DV_BT_CEA_1920X1080I50, 0x14, 0x01 },
+	{ },
+};
+
+static const struct adv76xx_video_standards adv7680_prim_mode_hdmi_gr[] = {
+	{ V4L2_DV_BT_DMT_640X480P60, 0x08, 0x00 },
+	{ V4L2_DV_BT_DMT_640X480P72, 0x09, 0x00 },
+	{ V4L2_DV_BT_DMT_640X480P75, 0x0a, 0x00 },
+	{ V4L2_DV_BT_DMT_640X480P85, 0x0b, 0x00 },
+	{ V4L2_DV_BT_DMT_800X600P56, 0x00, 0x00 },
+	{ V4L2_DV_BT_DMT_800X600P60, 0x01, 0x00 },
+	{ V4L2_DV_BT_DMT_800X600P72, 0x02, 0x00 },
+	{ V4L2_DV_BT_DMT_800X600P75, 0x03, 0x00 },
+	{ V4L2_DV_BT_DMT_800X600P85, 0x04, 0x00 },
+	{ V4L2_DV_BT_DMT_1024X768P60, 0x0c, 0x00 },
+	{ V4L2_DV_BT_DMT_1024X768P70, 0x0d, 0x00 },
+	{ },
 };
 
 /* sorted by number of lines */
@@ -595,6 +649,63 @@ static inline int vdp_write(struct v4l2_subdev *sd, u8 reg, u8 val)
 	return regmap_write(state->regmap[ADV7604_PAGE_VDP], reg, val);
 }
 
+static inline int vfe_read(struct v4l2_subdev *sd, u8 reg)
+{
+	struct adv76xx_state *state = to_state(sd);
+
+	return adv76xx_read_check(state, ADV7680_PAGE_VFE, reg);
+}
+
+static inline int vfe_write(struct v4l2_subdev *sd, u8 reg, u8 val)
+{
+	struct adv76xx_state *state = to_state(sd);
+
+	return regmap_write(state->regmap[ADV7680_PAGE_VFE], reg, val);
+}
+
+static inline int vfe_write_clr_set(struct v4l2_subdev *sd, u8 reg, u8 mask, u8 val)
+{
+	return vfe_write(sd, reg, (vfe_read(sd, reg) & ~mask) | val);
+}
+
+static inline int apix_tx_read(struct v4l2_subdev *sd, u8 reg)
+{
+	struct adv76xx_state *state = to_state(sd);
+
+	return adv76xx_read_check(state, ADV7680_PAGE_APIX_TX, reg);
+}
+
+static inline int apix_tx_write(struct v4l2_subdev *sd, u8 reg, u8 val)
+{
+	struct adv76xx_state *state = to_state(sd);
+
+	return regmap_write(state->regmap[ADV7680_PAGE_APIX_TX], reg, val);
+}
+
+static inline int apix_tx_write_clr_set(struct v4l2_subdev *sd, u8 reg, u8 mask, u8 val)
+{
+	return apix_tx_write(sd, reg, (apix_tx_read(sd, reg) & ~mask) | val);
+}
+
+static inline int apix_hdcp_tx_read(struct v4l2_subdev *sd, u8 reg)
+{
+	struct adv76xx_state *state = to_state(sd);
+
+	return adv76xx_read_check(state, ADV7680_PAGE_APIX_HDCP_TX, reg);
+}
+
+static inline int apix_hdcp_tx_write(struct v4l2_subdev *sd, u8 reg, u8 val)
+{
+	struct adv76xx_state *state = to_state(sd);
+
+	return regmap_write(state->regmap[ADV7680_PAGE_APIX_HDCP_TX], reg, val);
+}
+
+static inline int apix_hdcp_tx_write_clr_set(struct v4l2_subdev *sd, u8 reg, u8 mask, u8 val)
+{
+	return apix_hdcp_tx_write(sd, reg, (apix_hdcp_tx_read(sd, reg) & ~mask) | val);
+}
+
 #define ADV76XX_REG(page, offset)	(((page) << 8) | (offset))
 #define ADV76XX_REG_SEQ_TERM		0xffff
 
@@ -892,6 +1003,12 @@ static unsigned int adv7612_read_cable_det(struct v4l2_subdev *sd)
 
 	return value & 1;
 }
+static unsigned int adv7680_read_cable_det(struct v4l2_subdev *sd)
+{
+	u8 value = io_read(sd, 0x76);
+
+	return ((value & 0x08) >> 3);
+}
 
 static int adv76xx_s_detect_tx_5v_ctrl(struct v4l2_subdev *sd)
 {
@@ -907,15 +1024,23 @@ static int find_and_set_predefined_video_timings(struct v4l2_subdev *sd,
 		const struct adv76xx_video_standards *predef_vid_timings,
 		const struct v4l2_dv_timings *timings)
 {
+	struct adv76xx_state *state = to_state(sd);
 	int i;
 
 	for (i = 0; predef_vid_timings[i].timings.bt.width; i++) {
 		if (!v4l2_match_dv_timings(timings, &predef_vid_timings[i].timings,
-				is_digital_input(sd) ? 250000 : 1000000, false))
+					is_digital_input(sd) ? 250000 : 1000000, false))
 			continue;
-		io_write(sd, 0x00, predef_vid_timings[i].vid_std); /* video std */
-		io_write(sd, 0x01, (predef_vid_timings[i].v_freq << 4) +
-				prim_mode); /* v_freq and prim mode */
+		if (state->info->type == ADV7680) {
+			vfe_write(sd, 0x00, predef_vid_timings[i].vid_std); /* video std */
+			vfe_write(sd, 0x01, (predef_vid_timings[i].v_freq << 4) +
+					prim_mode); /* v_freq and prim mode */
+		}
+		else {
+			io_write(sd, 0x00, predef_vid_timings[i].vid_std); /* video std */
+			io_write(sd, 0x01, (predef_vid_timings[i].v_freq << 4) +
+					prim_mode); /* v_freq and prim mode */
+		}
 		return 0;
 	}
 
@@ -931,9 +1056,16 @@ static int configure_predefined_video_timings(struct v4l2_subdev *sd,
 	v4l2_dbg(1, debug, sd, "%s", __func__);
 
 	if (adv76xx_has_afe(state)) {
-		/* reset to default values */
-		io_write(sd, 0x16, 0x43);
-		io_write(sd, 0x17, 0x5a);
+		if (state->info->type == ADV7680) {
+			/* reset to default values */
+			vfe_write(sd, 0x16, 0x43);
+			vfe_write(sd, 0x17, 0x5a);
+		}
+		else {
+			/* reset to default values */
+			io_write(sd, 0x16, 0x43);
+			io_write(sd, 0x17, 0x5a);
+		}
 	}
 	/* disable embedded syncs for auto graphics mode */
 	cp_write_clr_set(sd, 0x81, 0x10, 0x00);
@@ -955,11 +1087,25 @@ static int configure_predefined_video_timings(struct v4l2_subdev *sd,
 			err = find_and_set_predefined_video_timings(sd,
 					0x02, adv7604_prim_mode_gr, timings);
 	} else if (is_digital_input(sd)) {
-		err = find_and_set_predefined_video_timings(sd,
-				0x05, adv76xx_prim_mode_hdmi_comp, timings);
-		if (err)
+		if (state->info->type == ADV7680) {
 			err = find_and_set_predefined_video_timings(sd,
-					0x06, adv76xx_prim_mode_hdmi_gr, timings);
+					0x05, adv7680_prim_mode_hdmi_comp, timings);
+		}
+		else {
+			err = find_and_set_predefined_video_timings(sd,
+					0x05, adv76xx_prim_mode_hdmi_comp, timings);
+		}
+
+		if (err) {
+			if (state->info->type == ADV7680) {
+				err = find_and_set_predefined_video_timings(sd,
+						0x06, adv7680_prim_mode_hdmi_gr, timings);
+			}
+			else {
+				err = find_and_set_predefined_video_timings(sd,
+						0x06, adv76xx_prim_mode_hdmi_gr, timings);
+			}
+		}
 	} else {
 		v4l2_dbg(2, debug, sd, "%s: Unknown port %d selected\n",
 				__func__, state->selected_input);
@@ -991,23 +1137,42 @@ static void configure_custom_video_timings(struct v4l2_subdev *sd,
 
 	if (is_analog_input(sd)) {
 		/* auto graphics */
-		io_write(sd, 0x00, 0x07); /* video std */
-		io_write(sd, 0x01, 0x02); /* prim mode */
+		if (state->info->type == ADV7680) {
+			vfe_write(sd, 0x00, 0x07); /* video std */
+			vfe_write(sd, 0x01, 0x02); /* prim mode */
+		}
+		else {
+			io_write(sd, 0x00, 0x07); /* video std */
+			io_write(sd, 0x01, 0x02); /* prim mode */
+		}
 		/* enable embedded syncs for auto graphics mode */
 		cp_write_clr_set(sd, 0x81, 0x10, 0x10);
 
 		/* Should only be set in auto-graphics mode [REF_02, p. 91-92] */
 		/* setup PLL_DIV_MAN_EN and PLL_DIV_RATIO */
 		/* IO-map reg. 0x16 and 0x17 should be written in sequence */
-		if (regmap_raw_write(state->regmap[ADV76XX_PAGE_IO],
-					0x16, pll, 2))
-			v4l2_err(sd, "writing to reg 0x16 and 0x17 failed\n");
+		if (state->info->type == ADV7680) {
+			if (regmap_raw_write(state->regmap[ADV7680_PAGE_VFE],
+						0x16, pll, 2))
+				v4l2_err(sd, "writing to reg 0x16 and 0x17 failed\n");
 
-		/* active video - horizontal timing */
-		cp_write(sd, 0xa2, (cp_start_sav >> 4) & 0xff);
-		cp_write(sd, 0xa3, ((cp_start_sav & 0x0f) << 4) |
-				   ((cp_start_eav >> 8) & 0x0f));
-		cp_write(sd, 0xa4, cp_start_eav & 0xff);
+			/* active video - horizontal timing */
+			cp_write(sd, 0x26, (cp_start_sav >> 8) & 0x3f);
+			cp_write(sd, 0x27, cp_start_sav & 0xff);
+			cp_write(sd, 0x28, (cp_start_eav >> 8) & 0x3f);
+			cp_write(sd, 0x29, cp_start_eav & 0xff);
+		}
+		else {
+			if (regmap_raw_write(state->regmap[ADV76XX_PAGE_IO],
+						0x16, pll, 2))
+				v4l2_err(sd, "writing to reg 0x16 and 0x17 failed\n");
+
+			/* active video - horizontal timing */
+			cp_write(sd, 0xa2, (cp_start_sav >> 4) & 0xff);
+			cp_write(sd, 0xa3, ((cp_start_sav & 0x0f) << 4) |
+					   ((cp_start_eav >> 8) & 0x0f));
+			cp_write(sd, 0xa4, cp_start_eav & 0xff);
+		}
 
 		/* active video - vertical timing */
 		cp_write(sd, 0xa5, (cp_start_vbi >> 4) & 0xff);
@@ -1017,8 +1182,14 @@ static void configure_custom_video_timings(struct v4l2_subdev *sd,
 	} else if (is_digital_input(sd)) {
 		/* set default prim_mode/vid_std for HDMI
 		   according to [REF_03, c. 4.2] */
-		io_write(sd, 0x00, 0x02); /* video std */
-		io_write(sd, 0x01, 0x06); /* prim mode */
+		if (state->info->type == ADV7680) {
+			vfe_write(sd, 0x00, 0x02); /* video std */
+			vfe_write(sd, 0x01, 0x06); /* prim mode */
+		}
+		else {
+			io_write(sd, 0x00, 0x02); /* video std */
+			io_write(sd, 0x01, 0x06); /* prim mode */
+		}
 	} else {
 		v4l2_dbg(2, debug, sd, "%s: Unknown port %d selected\n",
 				__func__, state->selected_input);
@@ -1089,12 +1260,23 @@ static void adv76xx_set_gain(struct v4l2_subdev *sd, bool auto_gain, u16 gain_a,
 static void set_rgb_quantization_range(struct v4l2_subdev *sd)
 {
 	struct adv76xx_state *state = to_state(sd);
-	bool rgb_output = io_read(sd, 0x02) & 0x02;
 	bool hdmi_signal = hdmi_read(sd, 0x05) & 0x80;
 	u8 y = HDMI_COLORSPACE_RGB;
+	bool rgb_output;
+	bool avi_info_detect;
 
-	if (hdmi_signal && (io_read(sd, 0x60) & 1))
+	if (state->info->type == ADV7680)
+		avi_info_detect = io_read(sd, 0x67) & 1;
+	else
+		avi_info_detect = io_read(sd, 0x60) & 1;
+
+	if (hdmi_signal && avi_info_detect)
 		y = infoframe_read(sd, 0x01) >> 5;
+
+	if (state->info->type == ADV7680)
+		rgb_output = vfe_read(sd, 0x02) & 0x02;
+	else
+		rgb_output = io_read(sd, 0x02) & 0x02;
 
 	v4l2_dbg(2, debug, sd, "%s: RGB quantization range: %d, RGB out: %d, HDMI: %d\n",
 			__func__, state->rgb_quantization_range,
@@ -1102,28 +1284,40 @@ static void set_rgb_quantization_range(struct v4l2_subdev *sd)
 
 	adv76xx_set_gain(sd, true, 0x0, 0x0, 0x0);
 	adv76xx_set_offset(sd, true, 0x0, 0x0, 0x0);
-	io_write_clr_set(sd, 0x02, 0x04, rgb_output ? 0 : 4);
+	if (state->info->type == ADV7680)
+		vfe_write_clr_set(sd, 0x02, 0x04, rgb_output ? 0 : 4);
+	else
+		io_write_clr_set(sd, 0x02, 0x04, rgb_output ? 0 : 4);
 
 	switch (state->rgb_quantization_range) {
 	case V4L2_DV_RGB_RANGE_AUTO:
 		if (state->selected_input == ADV7604_PAD_VGA_RGB) {
 			/* Receiving analog RGB signal
 			 * Set RGB full range (0-255) */
-			io_write_clr_set(sd, 0x02, 0xf0, 0x10);
+			if (state->info->type == ADV7680)
+				vfe_write_clr_set(sd, 0x02, 0xf0, 0x10);
+			else
+				io_write_clr_set(sd, 0x02, 0xf0, 0x10);
 			break;
 		}
 
 		if (state->selected_input == ADV7604_PAD_VGA_COMP) {
 			/* Receiving analog YPbPr signal
 			 * Set automode */
-			io_write_clr_set(sd, 0x02, 0xf0, 0xf0);
+			if (state->info->type == ADV7680)
+				vfe_write_clr_set(sd, 0x02, 0xf0, 0xf0);
+			else
+				io_write_clr_set(sd, 0x02, 0xf0, 0xf0);
 			break;
 		}
 
 		if (hdmi_signal) {
 			/* Receiving HDMI signal
 			 * Set automode */
-			io_write_clr_set(sd, 0x02, 0xf0, 0xf0);
+			if (state->info->type == ADV7680)
+				vfe_write_clr_set(sd, 0x02, 0xf0, 0xf0);
+			else
+				io_write_clr_set(sd, 0x02, 0xf0, 0xf0);
 			break;
 		}
 
@@ -1132,13 +1326,21 @@ static void set_rgb_quantization_range(struct v4l2_subdev *sd)
 		 * input format (CE/IT) in automatic mode */
 		if (state->timings.bt.flags & V4L2_DV_FL_IS_CE_VIDEO) {
 			/* RGB limited range (16-235) */
-			io_write_clr_set(sd, 0x02, 0xf0, 0x00);
+			if (state->info->type == ADV7680)
+				vfe_write_clr_set(sd, 0x02, 0xf0, 0x00);
+			else
+				io_write_clr_set(sd, 0x02, 0xf0, 0x00);
 		} else {
 			/* RGB full range (0-255) */
-			io_write_clr_set(sd, 0x02, 0xf0, 0x10);
+			if (state->info->type == ADV7680)
+				 /* Set automode */
+				vfe_write_clr_set(sd, 0x02, 0xf0, ADV7680_COLOR_SPACE_ANALOG_MODE);
+			else
+				io_write_clr_set(sd, 0x02, 0xf0, 0x10);
 
 			if (is_digital_input(sd) && rgb_output) {
-				adv76xx_set_offset(sd, false, 0x40, 0x40, 0x40);
+				if (state->info->type != ADV7680)
+					adv76xx_set_offset(sd, false, 0x40, 0x40, 0x40);
 			} else {
 				adv76xx_set_gain(sd, false, 0xe0, 0xe0, 0xe0);
 				adv76xx_set_offset(sd, false, 0x70, 0x70, 0x70);
@@ -1148,7 +1350,10 @@ static void set_rgb_quantization_range(struct v4l2_subdev *sd)
 	case V4L2_DV_RGB_RANGE_LIMITED:
 		if (state->selected_input == ADV7604_PAD_VGA_COMP) {
 			/* YCrCb limited range (16-235) */
-			io_write_clr_set(sd, 0x02, 0xf0, 0x20);
+			if (state->info->type == ADV7680)
+				vfe_write_clr_set(sd, 0x02, 0xf0, 0x20);
+			else
+				io_write_clr_set(sd, 0x02, 0xf0, 0x20);
 			break;
 		}
 
@@ -1156,13 +1361,19 @@ static void set_rgb_quantization_range(struct v4l2_subdev *sd)
 			break;
 
 		/* RGB limited range (16-235) */
-		io_write_clr_set(sd, 0x02, 0xf0, 0x00);
+		if (state->info->type == ADV7680)
+			vfe_write_clr_set(sd, 0x02, 0xf0, 0x00);
+		else
+			io_write_clr_set(sd, 0x02, 0xf0, 0x00);
 
 		break;
 	case V4L2_DV_RGB_RANGE_FULL:
 		if (state->selected_input == ADV7604_PAD_VGA_COMP) {
 			/* YCrCb full range (0-255) */
-			io_write_clr_set(sd, 0x02, 0xf0, 0x60);
+			if (state->info->type == ADV7680)
+				vfe_write_clr_set(sd, 0x02, 0xf0, 0x60);
+			else
+				io_write_clr_set(sd, 0x02, 0xf0, 0x60);
 			break;
 		}
 
@@ -1170,18 +1381,11 @@ static void set_rgb_quantization_range(struct v4l2_subdev *sd)
 			break;
 
 		/* RGB full range (0-255) */
-		io_write_clr_set(sd, 0x02, 0xf0, 0x10);
+		if (state->info->type == ADV7680)
+			vfe_write_clr_set(sd, 0x02, 0xff, 0x12); // TODO(pwerner): Force RGB FULL INPUT/OUTPUT (0x12)
+		else
+			io_write_clr_set(sd, 0x02, 0xf0, 0x10);
 
-		if (is_analog_input(sd) || hdmi_signal)
-			break;
-
-		/* Adjust gain/offset for DVI-D signals only */
-		if (rgb_output) {
-			adv76xx_set_offset(sd, false, 0x40, 0x40, 0x40);
-		} else {
-			adv76xx_set_gain(sd, false, 0xe0, 0xe0, 0xe0);
-			adv76xx_set_offset(sd, false, 0x70, 0x70, 0x70);
-		}
 		break;
 	}
 }
@@ -1259,7 +1463,12 @@ static inline bool no_signal_tmds(struct v4l2_subdev *sd)
 {
 	struct adv76xx_state *state = to_state(sd);
 
-	return !(io_read(sd, 0x6a) & (0x10 >> state->selected_input));
+	if (state->info->type == ADV7680) {
+		return !(io_read(sd, 0x71) & (0x08 >> state->selected_input));
+	}
+	else {
+		return !(io_read(sd, 0x6a) & (0x10 >> state->selected_input));
+	}
 }
 
 static inline bool no_lock_tmds(struct v4l2_subdev *sd)
@@ -1267,7 +1476,10 @@ static inline bool no_lock_tmds(struct v4l2_subdev *sd)
 	struct adv76xx_state *state = to_state(sd);
 	const struct adv76xx_chip_info *info = state->info;
 
-	return (io_read(sd, 0x6a) & info->tdms_lock_mask) != info->tdms_lock_mask;
+	if (info->type == ADV7680)
+		return (io_read(sd, 0x71) & info->tdms_lock_mask) != info->tdms_lock_mask;
+	else
+		return (io_read(sd, 0x6a) & info->tdms_lock_mask) != info->tdms_lock_mask;
 }
 
 static inline bool is_hdmi(struct v4l2_subdev *sd)
@@ -1360,6 +1572,7 @@ static int stdi2dv_timings(struct v4l2_subdev *sd,
 	u32 hfreq = (ADV76XX_FSC * 8) / stdi->bl;
 	u32 pix_clk;
 	int i;
+	unsigned active_width = 0;
 
 	for (i = 0; v4l2_dv_timings_presets[i].bt.width; i++) {
 		const struct v4l2_bt_timings *bt = &v4l2_dv_timings_presets[i].bt;
@@ -1382,15 +1595,17 @@ static int stdi2dv_timings(struct v4l2_subdev *sd,
 		}
 	}
 
-	if (v4l2_detect_cvt(stdi->lcf + 1, hfreq, stdi->lcvs, 0,
+	if (v4l2_detect_cvt(stdi->lcf + 1, hfreq, stdi->lcvs, active_width,
 			(stdi->hs_pol == '+' ? V4L2_DV_HSYNC_POS_POL : 0) |
 			(stdi->vs_pol == '+' ? V4L2_DV_VSYNC_POS_POL : 0),
-			false, timings))
+			stdi->interlaced,
+			timings))
 		return 0;
 	if (v4l2_detect_gtf(stdi->lcf + 1, hfreq, stdi->lcvs,
 			(stdi->hs_pol == '+' ? V4L2_DV_HSYNC_POS_POL : 0) |
 			(stdi->vs_pol == '+' ? V4L2_DV_VSYNC_POS_POL : 0),
-			false, state->aspect_ratio, timings))
+			stdi->interlaced,
+			state->aspect_ratio, timings))
 		return 0;
 
 	v4l2_dbg(2, debug, sd,
@@ -1414,7 +1629,7 @@ static int read_stdi(struct v4l2_subdev *sd, struct stdi_readback *stdi)
 
 	/* read STDI */
 	stdi->bl = cp_read16(sd, 0xb1, 0x3fff);
-	stdi->lcf = cp_read16(sd, info->lcf_reg, 0x7ff);
+	stdi->lcf = cp_read16(sd, info->lcf_reg, info->lcf_mask);
 	stdi->lcvs = cp_read(sd, 0xb3) >> 3;
 	stdi->interlaced = io_read(sd, 0x12) & 0x10;
 
@@ -1491,8 +1706,8 @@ static void adv76xx_fill_optional_dv_timings_fields(struct v4l2_subdev *sd,
 		struct v4l2_dv_timings *timings)
 {
 	v4l2_find_dv_timings_cap(timings, adv76xx_get_dv_timings_cap(sd, -1),
-				 is_digital_input(sd) ? 250000 : 1000000,
-				 adv76xx_check_dv_timings, NULL);
+			is_digital_input(sd) ? 250000 : 1000000,
+			adv76xx_check_dv_timings, NULL);
 }
 
 static unsigned int adv7604_read_hdmi_pixelclock(struct v4l2_subdev *sd)
@@ -1517,6 +1732,17 @@ static unsigned int adv7604_read_hdmi_pixelclock(struct v4l2_subdev *sd)
 }
 
 static unsigned int adv7611_read_hdmi_pixelclock(struct v4l2_subdev *sd)
+{
+	int a, b;
+
+	a = hdmi_read(sd, 0x51);
+	b = hdmi_read(sd, 0x52);
+	if (a < 0 || b < 0)
+		return 0;
+	return ((a << 1) | (b >> 7)) * 1000000 + (b & 0x7f) * 1000000 / 128;
+}
+
+static unsigned int adv7680_read_hdmi_pixelclock(struct v4l2_subdev *sd)
 {
 	int a, b;
 
@@ -1716,7 +1942,12 @@ static void adv7604_set_termination(struct v4l2_subdev *sd, bool enable)
 
 static void adv7611_set_termination(struct v4l2_subdev *sd, bool enable)
 {
-	hdmi_write(sd, 0x83, enable ? 0xfe : 0xff);
+	hdmi_write(sd, 0x83, enable ? 0xfe : 0xff);	/* on port A (only available) */
+}
+
+static void adv7680_set_termination(struct v4l2_subdev *sd, bool enable)
+{
+	hdmi_write(sd, 0x83, enable ? 0xfc : 0xff);	/* on port A and B */
 }
 
 static void enable_input(struct v4l2_subdev *sd)
@@ -1868,17 +2099,101 @@ static unsigned int adv76xx_op_ch_sel(struct adv76xx_state *state)
 	return op_ch_sel[state->pdata.bus_order][state->format->op_ch_sel >> 5];
 }
 
+static void adv7680_setup_apix_tx(struct adv76xx_state *state)
+{
+	struct v4l2_subdev *sd = &state->sd;
+
+	apix_tx_write_clr_set(sd, ADV7680_APIX_TX_FORCE_APIX_MODE_REG,
+			ADV7680_APIX_TX_FORCE_APIX_2_VAL, ADV7680_APIX_TX_FORCE_APIX_2_VAL); /* Force APIX 2 mode */
+	apix_tx_write(sd, ADV7680_APIX_TX_DOWN_BW_MODE_REG,
+			ADV7680_APIX_TX_DOWN_BW_3GBIT_VAL); /* POWER APIX LINK in 3Ghz mode */
+	if (fir_param_count == ADV7680_FIR_ARRAY_SIZE) {
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C0_REG,
+				fir_param[ADV7680_FIR_C0]); /* CUSTOM FIR SETTINGS */
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C1_REG,
+				fir_param[ADV7680_FIR_C1]); /* CUSTOM FIR SETTINGS */
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C2_REG,
+				fir_param[ADV7680_FIR_C2]); /* CUSTOM FIR SETTINGS */
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C3_REG,
+				fir_param[ADV7680_FIR_C3]); /* CUSTOM FIR SETTINGS */
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C4_REG,
+				fir_param[ADV7680_FIR_C4]); /* CUSTOM FIR SETTINGS */
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_B4_REG,
+				fir_param[ADV7680_FIR_B4]); /* CUSTOM FIR SETTINGS */
+		v4l2_dbg(2, debug, sd, "FIR settings: custom c0=0x%x c1=0x%x c2=0x%x c3=0x%x c4=0x%x b4=0x%x\n",
+				fir_param[ADV7680_FIR_C0], fir_param[ADV7680_FIR_C1], fir_param[ADV7680_FIR_C2],
+				fir_param[ADV7680_FIR_C3], fir_param[ADV7680_FIR_C4], fir_param[ADV7680_FIR_B4]);
+	}
+	else {
+		if (cable_len == 5) {
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C0_REG,
+					ADV7680_APIX_TX_PHY_5M_FIR_C0_VAL); /* 5 METRE FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C1_REG,
+					ADV7680_APIX_TX_PHY_5M_FIR_C1_VAL); /* 5 METRE FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C2_REG,
+					ADV7680_APIX_TX_PHY_5M_FIR_C2_VAL); /* 5 METRE FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C3_REG,
+					ADV7680_APIX_TX_PHY_5M_FIR_C3_VAL); /* 5 METRE FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C4_REG,
+					ADV7680_APIX_TX_PHY_5M_FIR_C4_VAL); /* 5 METRE FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_B4_REG,
+					ADV7680_APIX_TX_PHY_5M_FIR_B4_VAL); /* 5 METRE FIR SETTINGS */
+			v4l2_dbg(2, debug, sd, "FIR settings: cable length 5m\n");
+		}
+		else {
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C0_REG,
+					ADV7680_APIX_TX_PHY_VCC_FIR_C0_VAL); /* VCC FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C1_REG,
+					ADV7680_APIX_TX_PHY_VCC_FIR_C1_VAL); /* VCC FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C2_REG,
+					ADV7680_APIX_TX_PHY_VCC_FIR_C2_VAL); /* VCC FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C3_REG,
+					ADV7680_APIX_TX_PHY_VCC_FIR_C3_VAL); /* VCC FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C4_REG,
+					ADV7680_APIX_TX_PHY_VCC_FIR_C4_VAL); /* VCC FIR SETTINGS */
+			apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_B4_REG,
+					ADV7680_APIX_TX_PHY_VCC_FIR_B4_VAL); /* VCC FIR SETTINGS */
+			v4l2_dbg(2, debug, sd, "FIR settings: cable length 2m\n");
+		}
+	}
+	apix_tx_write(sd, ADV7680_APIX_TX_UP_SP_BW_REG,
+			ADV7680_APIX_TX_UP_SP_BW_VAL); /* Upstream link set to 187MHz, set upstream sample point for 187MHz,
+			 								  up_bit_align = falling edge */
+	apix_tx_write(sd, 0x1c, 0x80); /* Automatic retransmission of AShell datagram*/
+	apix_tx_write(sd, 0x14, 0xd9);
+	apix_tx_write(sd, 0x15, 0xc0); /* Up_watchdog bit aligned - 8 bytes ashell payload size */
+	apix_tx_write(sd, ADV7680_APIX_TX_MII_ETH_MODE_REG, ADV7680_APIX_TX_MII_ETH_MODE_VAL); /* Enable MII Ethernet mode */
+	apix_tx_write(sd, 0x12, 0x98); /* Enable pixel channel 0 and mii using clock synthesized from the PHY  */
+	apix_tx_write(sd, ADV7680_APIX_TX_0X24_REG,
+					ADV7680_APIX_TX_0X24_VAL); /* RESTART ALIGNMENT AFTER LINK ERROR_ch0 - ARQ disabled */
+	apix_tx_write(sd, ADV7680_APIX_TX_0X25_REG,
+					ADV7680_APIX_TX_0X25_VAL); /* RESTART ALIGNMENT AFTER LINK ERROR_ch1 - Channel 1 disabled */
+	apix_tx_write(sd, ADV7680_APIX_TX_0X26_REG, ADV7680_APIX_TX_0X26_VAL); /* 24 BIT PIXEL WIDTH FOR ch_0 */
+	apix_tx_write(sd, 0x27, 0x09);
+	apix_tx_write(sd, ADV7680_APIX_TX_0X28_REG, ADV7680_APIX_TX_0X28_VAL); /* Disable GPIO pin muxing */
+	apix_tx_write(sd, ADV7680_APIX_TX_0X29_REG,
+					ADV7680_APIX_TX_0X29_VAL); /* DISABLE ASHELL BW FOR PRIORITY GROUP, Disable GPIOs */
+
+	apix_tx_write(sd, ADV7680_APIX_TX_SOFT_RESET_REG,
+			ADV7680_APIX_TX_SOFT_RESET_VAL); /* APIX soft reset */
+}
+
 static void adv76xx_setup_format(struct adv76xx_state *state)
 {
 	struct v4l2_subdev *sd = &state->sd;
 
-	io_write_clr_set(sd, 0x02, 0x02,
-			state->format->rgb_out ? ADV76XX_RGB_OUT : 0);
-	io_write(sd, 0x03, state->format->op_format_sel |
-		 state->pdata.op_format_mode_sel);
-	io_write_clr_set(sd, 0x04, 0xe0, adv76xx_op_ch_sel(state));
-	io_write_clr_set(sd, 0x05, 0x01,
-			state->format->swap_cb_cr ? ADV76XX_OP_SWAP_CB_CR : 0);
+	if (state->info->type == ADV7680)
+		vfe_write_clr_set(sd, 0x02, 0x02,
+				state->format->rgb_out ? ADV76XX_RGB_OUT : 0);
+	else {
+		io_write_clr_set(sd, 0x02, 0x02,
+				state->format->rgb_out ? ADV76XX_RGB_OUT : 0);
+		io_write(sd, 0x03, state->format->op_format_sel |
+			 state->pdata.op_format_mode_sel);
+		io_write_clr_set(sd, 0x04, 0xe0, adv76xx_op_ch_sel(state));
+		io_write_clr_set(sd, 0x05, 0x01,
+				state->format->swap_cb_cr ? ADV76XX_OP_SWAP_CB_CR : 0);
+	}
 	set_rgb_quantization_range(sd);
 }
 
@@ -2166,15 +2481,28 @@ static int adv76xx_isr(struct v4l2_subdev *sd, u32 status, bool *handled)
 	const struct adv76xx_chip_info *info = state->info;
 	const u8 irq_reg_0x43 = io_read(sd, 0x43);
 	const u8 irq_reg_0x6b = io_read(sd, 0x6b);
-	const u8 irq_reg_0x70 = io_read(sd, 0x70);
+	const u8 irq_reg_0x7f = io_read(sd, 0x7f);
+	u8 irq_reg_0x70=0;
+	u8 irq_reg_0x77=0;
 	u8 fmt_change_digital;
 	u8 fmt_change;
 	u8 tx_5v;
 
+	if (info->type == ADV7680)
+		irq_reg_0x77 = io_read(sd, 0x77);
+	else
+		irq_reg_0x70 = io_read(sd, 0x70);
+
 	if (irq_reg_0x43)
 		io_write(sd, 0x44, irq_reg_0x43);
-	if (irq_reg_0x70)
-		io_write(sd, 0x71, irq_reg_0x70);
+	if (info->type == ADV7680) {
+		if (irq_reg_0x77)
+			io_write(sd, 0x71, irq_reg_0x77);
+	}
+	else {
+		if (irq_reg_0x70)
+			io_write(sd, 0x71, irq_reg_0x70);
+	}
 	if (irq_reg_0x6b)
 		io_write(sd, 0x6c, irq_reg_0x6b);
 
@@ -2182,7 +2510,13 @@ static int adv76xx_isr(struct v4l2_subdev *sd, u32 status, bool *handled)
 
 	/* format change */
 	fmt_change = irq_reg_0x43 & 0x98;
-	fmt_change_digital = is_digital_input(sd)
+
+	if (info->type == ADV7680)
+		fmt_change_digital = is_digital_input(sd)
+			   ? irq_reg_0x7f & info->fmt_change_digital_mask
+			   : 0;
+	else
+		fmt_change_digital = is_digital_input(sd)
 			   ? irq_reg_0x6b & info->fmt_change_digital_mask
 			   : 0;
 
@@ -2211,7 +2545,12 @@ static int adv76xx_isr(struct v4l2_subdev *sd, u32 status, bool *handled)
 #endif
 
 	/* tx 5v detect */
-	tx_5v = irq_reg_0x70 & info->cable_det_mask;
+	if (info->type == ADV7680) {
+		tx_5v = irq_reg_0x77 & info->cable_det_mask;
+	}
+	else {
+		tx_5v = irq_reg_0x70 & info->cable_det_mask;
+	}
 	if (tx_5v) {
 		v4l2_dbg(1, debug, sd, "%s: tx_5v: 0x%x\n", __func__, tx_5v);
 		adv76xx_s_detect_tx_5v_ctrl(sd);
@@ -2323,8 +2662,13 @@ static int adv76xx_set_edid(struct v4l2_subdev *sd, struct v4l2_edid *edid)
 		state->spa_port_a[1] = edid->edid[spa_loc + 1];
 		break;
 	case ADV7604_PAD_HDMI_PORT_B:
-		rep_write(sd, 0x70, edid->edid[spa_loc]);
-		rep_write(sd, 0x71, edid->edid[spa_loc + 1]);
+		if (info->type == ADV7680) {
+			rep_write(sd, 0x52, edid->edid[spa_loc]);
+			rep_write(sd, 0x53, edid->edid[spa_loc + 1]);
+		} else {
+			rep_write(sd, 0x70, edid->edid[spa_loc]);
+			rep_write(sd, 0x71, edid->edid[spa_loc + 1]);
+		}
 		break;
 	case ADV7604_PAD_HDMI_PORT_C:
 		rep_write(sd, 0x72, edid->edid[spa_loc]);
@@ -2341,6 +2685,9 @@ static int adv76xx_set_edid(struct v4l2_subdev *sd, struct v4l2_edid *edid)
 	if (info->type == ADV7604) {
 		rep_write(sd, 0x76, spa_loc & 0xff);
 		rep_write_clr_set(sd, 0x77, 0x40, (spa_loc & 0x100) >> 2);
+	} else 	if (info->type == ADV7680) {
+		rep_write(sd, 0x71, spa_loc & 0xff);
+		rep_write_clr_set(sd, 0x70, 0x07, (spa_loc & 0x700) >> 8);
 	} else {
 		/* ADV7612 Software Manual Rev. A, p. 15 */
 		rep_write(sd, 0x70, spa_loc & 0xff);
@@ -2397,8 +2744,15 @@ static int adv76xx_read_infoframe(struct v4l2_subdev *sd, int index,
 	uint8_t buffer[32];
 	u8 len;
 	int i;
+	int hdmi_lvl_status;
+	struct adv76xx_state *state = to_state(sd);
 
-	if (!(io_read(sd, 0x60) & adv76xx_cri[index].present_mask)) {
+	if (state->info->type == ADV7680)
+		hdmi_lvl_status = io_read(sd, 0x67);
+	else
+		hdmi_lvl_status = io_read(sd, 0x60);
+
+	if (!(hdmi_lvl_status & adv76xx_cri[index].present_mask)) {
 		v4l2_info(sd, "%s infoframe not received\n",
 			  adv76xx_cri[index].desc);
 		return -ENOENT;
@@ -2424,6 +2778,7 @@ static int adv76xx_read_infoframe(struct v4l2_subdev *sd, int index,
 		v4l2_err(sd, "%s: unpack of %s infoframe failed\n", __func__,
 			 adv76xx_cri[index].desc);
 		return -ENOENT;
+
 	}
 	return 0;
 }
@@ -2453,7 +2808,7 @@ static int adv76xx_log_status(struct v4l2_subdev *sd)
 	const struct adv76xx_chip_info *info = state->info;
 	struct v4l2_dv_timings timings;
 	struct stdi_readback stdi;
-	u8 reg_io_0x02 = io_read(sd, 0x02);
+	u8 reg_io_0x02;
 	u8 edid_enabled;
 	u8 cable_det;
 
@@ -2490,6 +2845,11 @@ static int adv76xx_log_status(struct v4l2_subdev *sd)
 		"12-bits per channel",
 		"16-bits per channel (not supported)"
 	};
+
+	if (state->info->type == ADV7680)
+		reg_io_0x02 = vfe_read(sd, 0x02);
+	else
+		reg_io_0x02 = io_read(sd, 0x02);
 
 	v4l2_info(sd, "-----Chip status-----\n");
 	v4l2_info(sd, "Chip power: %s\n", no_power(sd) ? "off" : "on");
@@ -2529,10 +2889,16 @@ static int adv76xx_log_status(struct v4l2_subdev *sd)
 	v4l2_info(sd, "CP locked: %s\n", no_lock_cp(sd) ? "false" : "true");
 	v4l2_info(sd, "CP free run: %s\n",
 			(in_free_run(sd)) ? "on" : "off");
-	v4l2_info(sd, "Prim-mode = 0x%x, video std = 0x%x, v_freq = 0x%x\n",
-			io_read(sd, 0x01) & 0x0f, io_read(sd, 0x00) & 0x3f,
-			(io_read(sd, 0x01) & 0x70) >> 4);
-
+	if (state->info->type == ADV7680) {
+		v4l2_info(sd, "Prim-mode = 0x%x, video std = 0x%x, v_freq = 0x%x\n",
+				vfe_read(sd, 0x01) & 0x0f, vfe_read(sd, 0x00) & 0x3f,
+				(vfe_read(sd, 0x01) & 0x70) >> 4);
+	}
+	else {
+		v4l2_info(sd, "Prim-mode = 0x%x, video std = 0x%x, v_freq = 0x%x\n",
+				io_read(sd, 0x01) & 0x0f, io_read(sd, 0x00) & 0x3f,
+				(io_read(sd, 0x01) & 0x70) >> 4);
+	}
 	v4l2_info(sd, "-----Video Timings-----\n");
 	if (read_stdi(sd, &stdi))
 		v4l2_info(sd, "STDI: not locked\n");
@@ -2579,15 +2945,23 @@ static int adv76xx_log_status(struct v4l2_subdev *sd)
 	if (is_hdmi(sd)) {
 		bool audio_pll_locked = hdmi_read(sd, 0x04) & 0x01;
 		bool audio_sample_packet_detect = hdmi_read(sd, 0x18) & 0x01;
-		bool audio_mute = io_read(sd, 0x65) & 0x40;
+		bool audio_mute;
+		if (state->info->type == ADV7680)
+			audio_mute = io_read(sd, 0x6C) & 0x40;
+		else
+			audio_mute = io_read(sd, 0x65) & 0x40;
 
 		v4l2_info(sd, "Audio: pll %s, samples %s, %s\n",
 				audio_pll_locked ? "locked" : "not locked",
 				audio_sample_packet_detect ? "detected" : "not detected",
 				audio_mute ? "muted" : "enabled");
 		if (audio_pll_locked && audio_sample_packet_detect) {
-			v4l2_info(sd, "Audio format: %s\n",
-					(hdmi_read(sd, 0x07) & 0x20) ? "multi-channel" : "stereo");
+			if (state->info->type == ADV7680)
+				v4l2_info(sd, "Audio format: %s\n",
+						(hdmi_read(sd, 0x07) & 0x40) ? "multi-channel" : "stereo");
+			else
+				v4l2_info(sd, "Audio format: %s\n",
+						(hdmi_read(sd, 0x07) & 0x20) ? "multi-channel" : "stereo");
 		}
 		v4l2_info(sd, "Audio CTS: %u\n", (hdmi_read(sd, 0x5b) << 12) +
 				(hdmi_read(sd, 0x5c) << 8) +
@@ -2708,7 +3082,7 @@ static const struct v4l2_ctrl_config adv76xx_ctrl_free_run_color_manual = {
 	.min = false,
 	.max = true,
 	.step = 1,
-	.def = false,
+	.def = true,
 };
 
 static const struct v4l2_ctrl_config adv76xx_ctrl_free_run_color = {
@@ -2750,6 +3124,7 @@ static int adv76xx_core_init(struct v4l2_subdev *sd)
 	struct adv76xx_state *state = to_state(sd);
 	const struct adv76xx_chip_info *info = state->info;
 	struct adv76xx_platform_data *pdata = &state->pdata;
+	int ret;
 
 	hdmi_write(sd, 0x48,
 		(pdata->disable_pwrdnb ? 0x80 : 0) |
@@ -2764,59 +3139,110 @@ static int adv76xx_core_init(struct v4l2_subdev *sd)
 		enable_input(sd);
 	}
 
-	/* power */
-	io_write(sd, 0x0c, 0x42);   /* Power up part and power down VDP */
-	io_write(sd, 0x0b, 0x44);   /* Power down ESDP block */
-	cp_write(sd, 0xcf, 0x01);   /* Power down macrovision */
+	ret = v4l2_ctrl_handler_setup(sd->ctrl_handler);
+	if (ret != 0) {
+		return ret;
+	}
 
-	/* video format */
-	io_write_clr_set(sd, 0x02, 0x0f, pdata->alt_gamma << 3);
-	io_write_clr_set(sd, 0x05, 0x0e, pdata->blank_data << 3 |
-			pdata->insert_av_codes << 2 |
-			pdata->replicate_av_codes << 1);
-	adv76xx_setup_format(state);
+	if (info->type == ADV7680) {
+		/* pin muxing */
+		io_write_clr_set(sd, 0x05, 0x0f, ADV7680_PIN_MUX_MII); /* set pin muxing for MII */
 
-	cp_write(sd, 0x69, 0x30);   /* Enable CP CSC */
+		/* power */
+		io_write(sd, 0x0c, 0x40);   /* Power up part */
+		io_write(sd, 0x15, 0x80);   /* Disable Tristate of Pins */
 
-	/* VS, HS polarities */
-	io_write(sd, 0x06, 0xa0 | pdata->inv_vs_pol << 2 |
-		 pdata->inv_hs_pol << 1 | pdata->inv_llc_pol);
+		io_write(sd, ADV7680_AUDIO_ROUT_MOD_REG, ADV7680_AUDIO_ROUT_MOD_VAL); /* HDMI audio automatic mode 1, all slots are sent to APIX 0 */
+		io_write(sd, 0xB3, 0x88); /* APIX audio input mode = 24bit I2S TDM8 */
+		io_write(sd, ADV7680_ADI_RECOM_WR_REG_1, ADV7680_ADI_RECOM_WR_VAL_1); /* ADI recommended write */
+		io_write(sd, ADV7680_HPA_REG, ADV7680_HPA_LOW_VAL); /* force HPA low */
+		io_write(sd, ADV7680_ADI_RECOM_WR_REG_2, ADV7680_ADI_RECOM_WR_VAL_2); /* ADI recommended write */
 
-	/* Adjust drive strength */
-	io_write(sd, 0x14, 0x40 | pdata->dr_str_data << 4 |
-				pdata->dr_str_clk << 2 |
-				pdata->dr_str_sync);
+		/* video format */
+		vfe_write_clr_set(sd, 0x02, 0x0f,
+				pdata->alt_gamma << 3 |
+				pdata->op_656_range << 2 |
+				ADV76XX_RGB_OUT |
+				pdata->alt_data_sat << 0);
 
-	cp_write(sd, 0xba, (pdata->hdmi_free_run_mode << 1) | 0x01); /* HDMI free run */
-	cp_write(sd, 0xf3, 0xdc); /* Low threshold to enter/exit free run mode */
-	cp_write(sd, 0xf9, 0x23); /*  STDI ch. 1 - LCVS change threshold -
-				      ADI recommended setting [REF_01, c. 2.3.3] */
-	cp_write(sd, 0x45, 0x23); /*  STDI ch. 2 - LCVS change threshold -
-				      ADI recommended setting [REF_01, c. 2.3.3] */
-	cp_write(sd, 0xc9, 0x2d); /* use prim_mode and vid_std as free run resolution
-				     for digital formats */
+		/* apix tx setup */
+		adv7680_setup_apix_tx(state);
+		io_write(sd, ADV7680_HPA_REG, ADV7680_HPA_HIGH_VAL); /* force HPA high */
+	}
+	else {
+		/* power */
+		io_write(sd, 0x0c, 0x42);   /* Power up part and power down VDP */
+		io_write(sd, 0x0b, 0x44);   /* Power down ESDP block */
+		cp_write(sd, 0xcf, 0x01);   /* Power down macrovision */
 
-	/* HDMI audio */
-	hdmi_write_clr_set(sd, 0x15, 0x03, 0x03); /* Mute on FIFO over-/underflow [REF_01, c. 1.2.18] */
-	hdmi_write_clr_set(sd, 0x1a, 0x0e, 0x08); /* Wait 1 s before unmute */
-	hdmi_write_clr_set(sd, 0x68, 0x06, 0x06); /* FIFO reset on over-/underflow [REF_01, c. 1.2.19] */
+		/* video format */
+		io_write_clr_set(sd, 0x02, 0x0f,
+				pdata->alt_gamma << 3 |
+				pdata->op_656_range << 2 |
+				pdata->alt_data_sat << 0);
 
-	/* TODO from platform data */
-	afe_write(sd, 0xb5, 0x01);  /* Setting MCLK to 256Fs */
+		io_write_clr_set(sd, 0x05, 0x0e, pdata->blank_data << 3 |
+				pdata->insert_av_codes << 2 |
+				pdata->replicate_av_codes << 1);
+
+		adv76xx_setup_format(state);
+
+		cp_write(sd, 0x69, 0x30);   /* Enable CP CSC */
+
+		/* VS, HS polarities */
+		io_write(sd, 0x06, 0xa0 | pdata->inv_vs_pol << 2 |
+				pdata->inv_hs_pol << 1 | pdata->inv_llc_pol);
+
+		/* Adjust drive strength */
+		io_write(sd, 0x14, 0x40 | pdata->dr_str_data << 4 |
+					pdata->dr_str_clk << 2 |
+					pdata->dr_str_sync);
+
+		cp_write(sd, 0xba, (pdata->hdmi_free_run_mode << 1) | 0x01); /* HDMI free run */
+		cp_write(sd, 0xf3, 0xdc); /* Low threshold to enter/exit free run mode */
+		cp_write(sd, 0xf9, 0x23); /*  STDI ch. 1 - LCVS change threshold -
+					      ADI recommended setting [REF_01, c. 2.3.3] */
+		cp_write(sd, 0x45, 0x23); /*  STDI ch. 2 - LCVS change threshold -
+					      ADI recommended setting [REF_01, c. 2.3.3] */
+		cp_write(sd, 0xc9, 0x2d); /* use prim_mode and vid_std as free run resolution
+					     for digital formats */
+
+		/* HDMI audio */
+		hdmi_write_clr_set(sd, 0x15, 0x03, 0x03); /* Mute on FIFO over-/underflow [REF_01, c. 1.2.18] */
+		hdmi_write_clr_set(sd, 0x1a, 0x0e, 0x08); /* Wait 1 s before unmute */
+		hdmi_write_clr_set(sd, 0x68, 0x06, 0x06); /* FIFO reset on over-/underflow [REF_01, c. 1.2.19] */
+
+		/* TODO from platform data */
+		afe_write(sd, 0xb5, 0x01);  /* Setting MCLK to 256Fs */
+	}
 
 	if (adv76xx_has_afe(state)) {
 		afe_write(sd, 0x02, pdata->ain_sel); /* Select analog input muxing mode */
 		io_write_clr_set(sd, 0x30, 1 << 4, pdata->output_bus_lsb_to_msb << 4);
 	}
 
-	/* interrupts */
-	io_write(sd, 0x40, 0xc0 | pdata->int1_config); /* Configure INT1 */
-	io_write(sd, 0x46, 0x98); /* Enable SSPD, STDI and CP unlocked interrupts */
-	io_write(sd, 0x6e, info->fmt_change_digital_mask); /* Enable V_LOCKED and DE_REGEN_LCK interrupts */
-	io_write(sd, 0x73, info->cable_det_mask); /* Enable cable detection (+5v) interrupts */
-	info->setup_irqs(sd);
 
-	return v4l2_ctrl_handler_setup(sd->ctrl_handler);
+	if (info->type == ADV7680) {
+		/* interrupts */
+		io_write(sd, 0x42, 0x00 | pdata->int1_config); /* Configure INT1 */
+		io_write(sd, 0x48, 0x00); /* Disable SSPD, STDI and CP unlock and lock interrupt */
+
+		io_write_clr_set(sd, 0x7f, info->fmt_change_digital_mask, 0x00); /* Disable V_LOCKED, VIDEO_3D and DE_REGEN_LCK interrupts */
+
+		io_write_clr_set(sd, 0x7a, info->cable_det_mask, 0x00); /* Disable cable detection (+5v) interrupts */
+	}
+	else {
+		io_write(sd, 0x40, 0xc0 | pdata->int1_config); /* Configure INT1 */
+		io_write(sd, 0x46, 0x98); /* Enable SSPD, STDI and CP unlocked interrupts */
+
+		io_write(sd, 0x6e, info->fmt_change_digital_mask); /* Enable V_LOCKED and DE_REGEN_LCK interrupts */
+
+		io_write(sd, 0x73, info->cable_det_mask); /* Enable cable detection (+5v) interrupts */
+
+		info->setup_irqs(sd);
+	}
+
+	return 0;
 }
 
 static void adv7604_setup_irqs(struct v4l2_subdev *sd)
@@ -2834,6 +3260,11 @@ static void adv7612_setup_irqs(struct v4l2_subdev *sd)
 	io_write(sd, 0x41, 0xd0); /* disable INT2 */
 }
 
+static void adv7680_setup_irqs(struct v4l2_subdev *sd)
+{
+	io_write(sd, 0x43, 0xd0); /* STDI irq for any change, disable INT2 */
+}
+
 static void adv76xx_unregister_clients(struct adv76xx_state *state)
 {
 	unsigned int i;
@@ -2845,26 +3276,13 @@ static void adv76xx_unregister_clients(struct adv76xx_state *state)
 }
 
 static struct i2c_client *adv76xx_dummy_client(struct v4l2_subdev *sd,
-					       unsigned int page)
+							u8 addr, u8 io_reg)
 {
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
-	struct adv76xx_state *state = to_state(sd);
-	struct adv76xx_platform_data *pdata = &state->pdata;
-	unsigned int io_reg = 0xf2 + page;
-	struct i2c_client *new_client;
 
-	if (pdata && pdata->i2c_addresses[page])
-		new_client = i2c_new_dummy(client->adapter,
-					   pdata->i2c_addresses[page]);
-	else
-		new_client = i2c_new_secondary_device(client,
-				adv76xx_default_addresses[page].name,
-				adv76xx_default_addresses[page].default_addr);
-
-	if (new_client)
-		io_write(sd, io_reg, new_client->addr << 1);
-
-	return new_client;
+	if (addr)
+		io_write(sd, io_reg, addr << 1);
+	return i2c_new_dummy(client->adapter, io_read(sd, io_reg) >> 1);
 }
 
 static const struct adv76xx_reg_seq adv7604_recommended_settings_afe[] = {
@@ -2944,6 +3362,29 @@ static const struct adv76xx_reg_seq adv7612_recommended_settings_hdmi[] = {
 	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x58), 0x01 },
 	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x03), 0x98 },
 	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x4c), 0x44 },
+
+	{ ADV76XX_REG_SEQ_TERM, 0 },
+};
+
+static const struct adv76xx_reg_seq adv7680_recommended_settings_hdmi[] = {
+	{ ADV76XX_REG(ADV76XX_PAGE_CP, 0x6c), 0x00 },   /* ADI recommended write to CP */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x0d), 0x14 }, /* PORT B SECONDARY PORT SELECTION */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x02), 0x03 }, /* ALL Ports enabled */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0xcb), 0x01 }, /* Turn off Slow Adapt override */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, ADV7680_HDMI_HPA_MANUAL_REG), ADV7680_HDMI_HPA_AUTO_VAL}, /* HPA auto mode */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x3d), 0x10 }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x3e), 0x7b }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x3f), 0x1c }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x4e), 0x69 }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x4f), 0x46 }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x57), 0xa3 }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x58), 0x04 }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x6f), 0x04 }, /* ADI Recommended Setting */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x75), 0x04 }, /* VCO bandwidth settings */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x83), 0xfc }, /* Enable Termination */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x85), 0x10 }, /* Enable Equaliser */
+	{ ADV76XX_REG(ADV76XX_PAGE_HDMI, 0x97), 0xc0 }, /* ADI recommended write */
+
 	{ ADV76XX_REG_SEQ_TERM, 0 },
 };
 
@@ -2956,6 +3397,7 @@ static const struct adv76xx_chip_info adv76xx_chip_info[] = {
 		.edid_enable_reg = 0x77,
 		.edid_status_reg = 0x7d,
 		.lcf_reg = 0xb3,
+		.lcf_mask = 0x7ff,
 		.tdms_lock_mask = 0xe0,
 		.cable_det_mask = 0x1e,
 		.fmt_change_digital_mask = 0xc1,
@@ -3002,6 +3444,7 @@ static const struct adv76xx_chip_info adv76xx_chip_info[] = {
 		.edid_enable_reg = 0x74,
 		.edid_status_reg = 0x76,
 		.lcf_reg = 0xa3,
+		.lcf_mask = 0x7ff,
 		.tdms_lock_mask = 0x43,
 		.cable_det_mask = 0x01,
 		.fmt_change_digital_mask = 0x03,
@@ -3076,12 +3519,57 @@ static const struct adv76xx_chip_info adv76xx_chip_info[] = {
 		.field1_vsync_mask = 0x3fff,
 		.field1_vbackporch_mask = 0x3fff,
 	},
+	[ADV7680] = {
+		.type = ADV7680,
+		.has_afe = false,
+		.max_port = ADV7604_PAD_HDMI_PORT_B,
+		.num_dv_ports = 2,
+		.edid_enable_reg = 0x74,
+		.edid_status_reg = 0x76,
+		.lcf_reg = 0xa3,
+		.lcf_mask = 0xfff,
+		.tdms_lock_mask = 0x80, /* OK but only checked TMDSPLL_LCK_A_RAW may be needed check also reg 0x7B mask 0x03 */
+		.cable_det_mask = 0x08,
+		.fmt_change_digital_mask = 0x03,
+		.cp_csc = 0xf4,
+		.formats = NULL,
+		.nformats = 0,
+		.set_termination = adv7680_set_termination,
+		.setup_irqs = adv7680_setup_irqs,
+		.read_hdmi_pixelclock = adv7680_read_hdmi_pixelclock,
+		.read_cable_det = adv7680_read_cable_det,
+		.recommended_settings = {
+		    [1] = adv7680_recommended_settings_hdmi,
+		},
+		.num_recommended_settings = {
+		    [1] = ARRAY_SIZE(adv7680_recommended_settings_hdmi),
+		},
+		.page_mask = BIT(ADV76XX_PAGE_IO) | BIT(ADV7680_PAGE_VFE) |
+			BIT(ADV7680_PAGE_APIX_TX) | BIT(ADV7680_PAGE_APIX_HDCP_TX) |
+			BIT(ADV76XX_PAGE_CEC) | BIT(ADV76XX_PAGE_INFOFRAME) |
+			BIT(ADV76XX_PAGE_AFE) | BIT(ADV76XX_PAGE_REP) |
+			BIT(ADV76XX_PAGE_EDID) | BIT(ADV76XX_PAGE_HDMI) |
+			BIT(ADV76XX_PAGE_CP),
+		.linewidth_mask = 0x1fff,
+		.field0_height_mask = 0x1fff,
+		.field1_height_mask = 0x1fff,
+		.hfrontporch_mask = 0x1fff,
+		.hsync_mask = 0x1fff,
+		.hbackporch_mask = 0x1fff,
+		.field0_vfrontporch_mask = 0x3fff,
+		.field0_vsync_mask = 0x3fff,
+		.field0_vbackporch_mask = 0x3fff,
+		.field1_vfrontporch_mask = 0x3fff,
+		.field1_vsync_mask = 0x3fff,
+		.field1_vbackporch_mask = 0x3fff,
+	},
 };
 
 static const struct i2c_device_id adv76xx_i2c_id[] = {
 	{ "adv7604", (kernel_ulong_t)&adv76xx_chip_info[ADV7604] },
 	{ "adv7611", (kernel_ulong_t)&adv76xx_chip_info[ADV7611] },
 	{ "adv7612", (kernel_ulong_t)&adv76xx_chip_info[ADV7612] },
+	{ "adv7680", (kernel_ulong_t)&adv76xx_chip_info[ADV7680] },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, adv76xx_i2c_id);
@@ -3089,6 +3577,7 @@ MODULE_DEVICE_TABLE(i2c, adv76xx_i2c_id);
 static const struct of_device_id adv76xx_of_id[] __maybe_unused = {
 	{ .compatible = "adi,adv7611", .data = &adv76xx_chip_info[ADV7611] },
 	{ .compatible = "adi,adv7612", .data = &adv76xx_chip_info[ADV7612] },
+	{ .compatible = "adi,adv7680", .data = &adv76xx_chip_info[ADV7680] },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, adv76xx_of_id);
@@ -3136,6 +3625,26 @@ static int adv76xx_parse_dt(struct adv76xx_state *state)
 	/* Disable the interrupt for now as no DT-based board uses it. */
 	state->pdata.int1_config = ADV76XX_INT1_CONFIG_DISABLED;
 
+	/* Use the default I2C addresses. */
+	state->pdata.i2c_addresses[ADV7680_PAGE_VFE] = 0x52;
+	state->pdata.i2c_addresses[ADV7680_PAGE_APIX_TX] = 0x0a;
+	state->pdata.i2c_addresses[ADV7680_PAGE_APIX_HDCP_TX] = 0x08;
+	state->pdata.i2c_addresses[ADV7604_PAGE_AVLINK] = 0x42;
+	state->pdata.i2c_addresses[ADV76XX_PAGE_CEC] = 0x40;
+	state->pdata.i2c_addresses[ADV76XX_PAGE_INFOFRAME] = 0x3e;
+	state->pdata.i2c_addresses[ADV7604_PAGE_ESDP] = 0x38;
+	state->pdata.i2c_addresses[ADV7604_PAGE_DPP] = 0x3c;
+	state->pdata.i2c_addresses[ADV76XX_PAGE_AFE] = 0x26;	 /* DPLL */
+	if (state->info->type == ADV7680)
+		state->pdata.i2c_addresses[ADV76XX_PAGE_REP] = 0x3A; /* KSV */
+	else
+		state->pdata.i2c_addresses[ADV76XX_PAGE_REP] = 0x32;
+	state->pdata.i2c_addresses[ADV76XX_PAGE_EDID] = 0x36;
+	state->pdata.i2c_addresses[ADV76XX_PAGE_HDMI] = 0x34;
+	state->pdata.i2c_addresses[ADV76XX_PAGE_TEST] = 0x30;
+	state->pdata.i2c_addresses[ADV76XX_PAGE_CP] = 0x22;
+	state->pdata.i2c_addresses[ADV7604_PAGE_VDP] = 0x24;
+
 	/* Hardcode the remaining platform data fields. */
 	state->pdata.disable_pwrdnb = 0;
 	state->pdata.disable_cable_det_rst = 0;
@@ -3152,6 +3661,62 @@ static int adv76xx_parse_dt(struct adv76xx_state *state)
 static const struct regmap_config adv76xx_regmap_cnf[] = {
 	{
 		.name			= "io",
+		.reg_bits		= 8,
+		.val_bits		= 8,
+
+		.max_register		= 0xff,
+		.cache_type		= REGCACHE_NONE,
+	},
+	{
+		.name			= "vfe",
+		.reg_bits		= 8,
+		.val_bits		= 8,
+
+		.max_register		= 0xff,
+		.cache_type		= REGCACHE_NONE,
+	},
+	{
+		.name			= "dummy-2",
+		.reg_bits		= 8,
+		.val_bits		= 8,
+
+		.max_register		= 0xff,
+		.cache_type		= REGCACHE_NONE,
+	},
+	{
+		.name			= "dummy-3",
+		.reg_bits		= 8,
+		.val_bits		= 8,
+
+		.max_register		= 0xff,
+		.cache_type		= REGCACHE_NONE,
+	},
+	{
+		.name			= "dummy-4",
+		.reg_bits		= 8,
+		.val_bits		= 8,
+
+		.max_register		= 0xff,
+		.cache_type		= REGCACHE_NONE,
+	},
+	{
+		.name			= "apix_tx",
+		.reg_bits		= 8,
+		.val_bits		= 8,
+
+		.max_register		= 0xff,
+		.cache_type		= REGCACHE_NONE,
+	},
+	{
+		.name			= "apix_hdcp_tx",
+		.reg_bits		= 8,
+		.val_bits		= 8,
+
+		.max_register		= 0xff,
+		.cache_type		= REGCACHE_NONE,
+	},
+	{
+		.name			= "dummy-7",
 		.reg_bits		= 8,
 		.val_bits		= 8,
 
@@ -3283,7 +3848,7 @@ static int configure_regmaps(struct adv76xx_state *state)
 {
 	int i, err;
 
-	for (i = ADV7604_PAGE_AVLINK ; i < ADV76XX_PAGE_MAX; i++) {
+	for (i = ADV7680_PAGE_VFE ; i < ADV76XX_PAGE_MAX; i++) {
 		err = configure_regmap(state, i);
 		if (err && (err != -ENODEV))
 			return err;
@@ -3304,11 +3869,131 @@ static void adv76xx_reset(struct adv76xx_state *state)
 	}
 }
 
+static ssize_t adv7680_fir_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	u16 var = 0;
+
+	if (strcmp(attr->attr.name, "fir_c0_param") == 0)
+		var = apix_tx_read(sd, ADV7680_APIX_TX_PHY_FIR_C0_REG);
+	else if (strcmp(attr->attr.name, "fir_c1_param") == 0)
+		var = apix_tx_read(sd, ADV7680_APIX_TX_PHY_FIR_C1_REG);
+	else if (strcmp(attr->attr.name, "fir_c2_param") == 0)
+		var = apix_tx_read(sd, ADV7680_APIX_TX_PHY_FIR_C2_REG);
+	else if (strcmp(attr->attr.name, "fir_c3_param") == 0)
+		var = apix_tx_read(sd, ADV7680_APIX_TX_PHY_FIR_C3_REG);
+	else if (strcmp(attr->attr.name, "fir_c4_param") == 0)
+		var = apix_tx_read(sd, ADV7680_APIX_TX_PHY_FIR_C4_REG);
+	else if (strcmp(attr->attr.name, "fir_b4_param") == 0)
+		var = apix_tx_read(sd, ADV7680_APIX_TX_PHY_FIR_B4_REG);
+
+	return sprintf(buf, "0x%x\n", var);
+}
+
+static ssize_t adv7680_fir_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	u16 var;
+	u16 ret;
+
+	ret = kstrtou16(buf, 16, &var);
+	if (ret < 0)
+		return ret;
+
+	if (strcmp(attr->attr.name, "fir_c0_param") == 0)
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C0_REG, var);
+	else if (strcmp(attr->attr.name, "fir_c1_param") == 0)
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C1_REG, var);
+	else if (strcmp(attr->attr.name, "fir_c2_param") == 0)
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C2_REG, var);
+	else if (strcmp(attr->attr.name, "fir_c3_param") == 0)
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C3_REG, var);
+	else if (strcmp(attr->attr.name, "fir_c4_param") == 0)
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_C4_REG, var);
+	else if (strcmp(attr->attr.name, "fir_b4_param") == 0)
+		apix_tx_write(sd, ADV7680_APIX_TX_PHY_FIR_B4_REG, var);
+
+	return count;
+}
+
+static ssize_t mfg_link_up_frame_alignment_status_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	u8 aligned_status = 0;
+
+	aligned_status = apix_tx_read(sd, ADV7680_APIX_TX_UP_FRAME_ALIGNMENT_STATUS);
+
+	return sprintf(buf, "%u\n", aligned_status);
+}
+
+static ssize_t mfg_link_ch0_crc_error_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	u8 crc_error = 0;
+
+	crc_error = apix_tx_read(sd, ADV7680_APIX_TX_ASHELL2_CH0_CRC_ERROR);
+
+	return sprintf(buf, "%u\n", crc_error);
+}
+
+static ssize_t mfg_link_ch0_crc_error_cnt_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	u8 crc_error_cnt = 0;
+
+	crc_error_cnt = apix_tx_read(sd, ADV7680_APIX_TX_ASHELL2_CH0_CRC_ERROR_CNT);
+
+	return sprintf(buf, "%u\n", crc_error_cnt);
+}
+
+static ssize_t mfg_link_ch1_crc_error_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	u8 crc_error = 0;
+
+	crc_error = apix_tx_read(sd, ADV7680_APIX_TX_ASHELL2_CH1_CRC_ERROR);
+
+	return sprintf(buf, "%u\n", crc_error);
+}
+
+static ssize_t mfg_link_ch1_crc_error_cnt_get(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	u8 crc_error_cnt = 0;
+
+	crc_error_cnt = apix_tx_read(sd, ADV7680_APIX_TX_ASHELL2_CH1_CRC_ERROR_CNT);
+
+	return sprintf(buf, "%u\n", crc_error_cnt);
+}
+
+static DEVICE_ATTR(fir_c0_param, 0644, adv7680_fir_show, adv7680_fir_store);
+static DEVICE_ATTR(fir_c1_param, 0644, adv7680_fir_show, adv7680_fir_store);
+static DEVICE_ATTR(fir_c2_param, 0644, adv7680_fir_show, adv7680_fir_store);
+static DEVICE_ATTR(fir_c3_param, 0644, adv7680_fir_show, adv7680_fir_store);
+static DEVICE_ATTR(fir_c4_param, 0644, adv7680_fir_show, adv7680_fir_store);
+static DEVICE_ATTR(fir_b4_param, 0644, adv7680_fir_show, adv7680_fir_store);
+
+static DEVICE_ATTR(mfg_link_up_frame_alignment_status, 0440, mfg_link_up_frame_alignment_status_get, NULL);
+static DEVICE_ATTR(mfg_link_ch0_crc_error, 0444, mfg_link_ch0_crc_error_get, NULL);
+static DEVICE_ATTR(mfg_link_ch0_crc_error_cnt, 0440, mfg_link_ch0_crc_error_cnt_get, NULL);
+static DEVICE_ATTR(mfg_link_ch1_crc_error, 0440, mfg_link_ch1_crc_error_get, NULL);
+static DEVICE_ATTR(mfg_link_ch1_crc_error_cnt, 0440, mfg_link_ch1_crc_error_cnt_get, NULL);
+
+static DEVICE_INT_ATTR(mfg_swid, 0444, mfg_software_id);
+static DEVICE_INT_ATTR(mfg_hwid, 0444, mfg_hardware_id);
+
 static int adv76xx_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id)
 {
-	static const struct v4l2_dv_timings cea640x480 =
-		V4L2_DV_BT_CEA_640X480P59_94;
+	static const struct v4l2_dv_timings dmt1024x768 =
+			V4L2_DV_BT_DMT_1024X768P60;
 	struct adv76xx_state *state;
 	struct v4l2_ctrl_handler *hdl;
 	struct v4l2_ctrl *ctrl;
@@ -3366,13 +4051,13 @@ static int adv76xx_probe(struct i2c_client *client,
 			v4l_info(client, "Handling HPD %u GPIO\n", i);
 	}
 	state->reset_gpio = devm_gpiod_get_optional(&client->dev, "reset",
-								GPIOD_OUT_HIGH);
+								GPIOD_OUT_LOW);
 	if (IS_ERR(state->reset_gpio))
 		return PTR_ERR(state->reset_gpio);
 
 	adv76xx_reset(state);
 
-	state->timings = cea640x480;
+	state->timings = dmt1024x768;
 	state->format = adv76xx_format_info(state, MEDIA_BUS_FMT_YUYV8_2X8);
 
 	sd = &state->sd;
@@ -3408,6 +4093,8 @@ static int adv76xx_probe(struct i2c_client *client,
 					client->addr << 1);
 			return -ENODEV;
 		}
+		// Save the model as identifiers for MFG
+		mfg_hardware_id = 7604;
 		break;
 	case ADV7611:
 	case ADV7612:
@@ -3433,8 +4120,35 @@ static int adv76xx_probe(struct i2c_client *client,
 					client->addr << 1);
 			return -ENODEV;
 		}
+		// Save the model as identifiers for MFG
+		mfg_hardware_id = 7611;
+		break;
+	case ADV7680:
+		err = regmap_read(state->regmap[ADV76XX_PAGE_IO], 0xe1, &val);
+		if (err) {
+			v4l2_err(sd, "Error %d reading IO Regmap\n", err);
+			return -ENODEV;
+		}
+		val2 = val << 8;
+		err = regmap_read(state->regmap[ADV76XX_PAGE_IO], 0xe2, &val);
+		if (err) {
+			v4l2_err(sd, "Error %d reading IO Regmap\n", err);
+			return -ENODEV;
+		}
+		val |= val2;
+		if (val != 0x8023) {
+			v4l2_err(sd, "not an adv7680 on address 0x%x\n",
+					client->addr << 1);
+			return -ENODEV;
+		}
+
+		// Save the model as identifiers for MFG
+		mfg_hardware_id = 7680;
 		break;
 	}
+
+	// Save revision as identifiers for MFG
+	mfg_software_id = (int) val;
 
 	/* control handlers */
 	hdl = &state->hdl;
@@ -3460,7 +4174,7 @@ static int adv76xx_probe(struct i2c_client *client,
 	state->rgb_quantization_range_ctrl =
 		v4l2_ctrl_new_std_menu(hdl, &adv76xx_ctrl_ops,
 			V4L2_CID_DV_RX_RGB_RANGE, V4L2_DV_RGB_RANGE_FULL,
-			0, V4L2_DV_RGB_RANGE_AUTO);
+			0, V4L2_DV_RGB_RANGE_FULL);
 
 	/* custom controls */
 	if (adv76xx_has_afe(state))
@@ -3484,10 +4198,14 @@ static int adv76xx_probe(struct i2c_client *client,
 	for (i = 1; i < ADV76XX_PAGE_MAX; ++i) {
 		if (!(BIT(i) & state->info->page_mask))
 			continue;
+		if (state->pdata.i2c_addresses[i] == 0)
+			continue;
 
-		state->i2c_clients[i] = adv76xx_dummy_client(sd, i);
+		state->i2c_clients[i] =
+			adv76xx_dummy_client(sd, state->pdata.i2c_addresses[i],
+					ADV76XX_CLI_START_ADDR + i);
 		if (!state->i2c_clients[i]) {
-			err = -EINVAL;
+			err = -ENOMEM;
 			v4l2_err(sd, "failed to create i2c client %u\n", i);
 			goto err_i2c;
 		}
@@ -3533,6 +4251,47 @@ static int adv76xx_probe(struct i2c_client *client,
 	if (err)
 		goto err_entity;
 
+	if (state->info->type == ADV7680) {
+		if ( device_create_file(sd->dev, &dev_attr_fir_c0_param) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for fir_c0_param\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_fir_c1_param) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for fir_c1_param\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_fir_c2_param) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for fir_c2_param\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_fir_c3_param) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for fir_c3_param\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_fir_c4_param) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for fir_c4_param\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_fir_b4_param) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for fir_b4_param\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_mfg_link_up_frame_alignment_status) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for mfg_link_up_frame_alignment_status\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_mfg_link_ch0_crc_error) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for mfg_link_ch0_crc_error\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_mfg_link_ch0_crc_error_cnt) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for mfg_link_ch0_crc_error_cnt\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_mfg_link_ch1_crc_error) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for mfg_link_ch1_crc_error\n");
+
+		if ( device_create_file(sd->dev, &dev_attr_mfg_link_ch1_crc_error_cnt) != 0 )
+			printk(KERN_ALERT "Sysfs Attribute Creation failed for mfg_link_ch1_crc_error_cnt\n");
+	}
+
+	if ( device_create_file(sd->dev, &dev_attr_mfg_swid.attr) != 0 )
+		printk(KERN_ALERT "Sysfs Attribute Creation failed for mfg_swid\n");
+
+	if ( device_create_file(sd->dev, &dev_attr_mfg_hwid.attr) != 0 )
+		printk(KERN_ALERT "Sysfs Attribute Creation failed for mfg_hwid\n");
+
 	return 0;
 
 err_entity:
@@ -3552,13 +4311,49 @@ static int adv76xx_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct adv76xx_state *state = to_state(sd);
+	int i;
 
 	/* disable interrupts */
-	io_write(sd, 0x40, 0);
-	io_write(sd, 0x41, 0);
-	io_write(sd, 0x46, 0);
-	io_write(sd, 0x6e, 0);
-	io_write(sd, 0x73, 0);
+
+	if (state->info->type == ADV7680) {
+		io_write(sd, 0x42, 0);
+		io_write(sd, 0x48, 0);
+		io_write(sd, 0x7f, 0);
+		io_write(sd, 0x7a, 0);
+	}
+	else {
+		io_write(sd, 0x40, 0);
+		io_write(sd, 0x41, 0);
+		io_write(sd, 0x46, 0);
+		io_write(sd, 0x6e, 0);
+		io_write(sd, 0x73, 0);
+	}
+
+	if (state->info->type == ADV7680) {
+		device_remove_file(sd->dev, &dev_attr_fir_c0_param);
+		device_remove_file(sd->dev, &dev_attr_fir_c1_param);
+		device_remove_file(sd->dev, &dev_attr_fir_c2_param);
+		device_remove_file(sd->dev, &dev_attr_fir_c3_param);
+		device_remove_file(sd->dev, &dev_attr_fir_c4_param);
+		device_remove_file(sd->dev, &dev_attr_fir_b4_param);
+		device_remove_file(sd->dev, &dev_attr_mfg_link_up_frame_alignment_status);
+		device_remove_file(sd->dev, &dev_attr_mfg_link_ch0_crc_error);
+		device_remove_file(sd->dev, &dev_attr_mfg_link_ch0_crc_error_cnt);
+		device_remove_file(sd->dev, &dev_attr_mfg_link_ch1_crc_error);
+		device_remove_file(sd->dev, &dev_attr_mfg_link_ch1_crc_error_cnt);
+	}
+	device_remove_file(sd->dev, &dev_attr_mfg_swid.attr);
+	device_remove_file(sd->dev, &dev_attr_mfg_hwid.attr);
+
+	/* Release GPIOs. */
+	for (i = 0; i < state->info->num_dv_ports; ++i) {
+		if (state->hpd_gpio[i])
+			devm_gpiod_put(&client->dev, state->hpd_gpio[i]);
+	}
+	if (state->reset_gpio) {
+		gpiod_set_value_cansleep(state->reset_gpio, 0);
+		devm_gpiod_put(&client->dev, state->reset_gpio);
+	}
 
 	cancel_delayed_work_sync(&state->delayed_work_enable_hotplug);
 	v4l2_async_unregister_subdev(sd);
@@ -3568,12 +4363,68 @@ static int adv76xx_remove(struct i2c_client *client)
 	return 0;
 }
 
+static int adv76xx_suspend (struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct adv76xx_state *state = to_state(sd);
+	volatile int pwr_val = io_read(sd, ADV7680_POWER_REG);
+
+	if (state->info->type == ADV7680) {
+
+		pwr_val = pwr_val | ADV7680_POWER_DOWN_VAL;
+		io_write(sd, ADV7680_POWER_REG, pwr_val);
+
+		cancel_delayed_work_sync(&state->delayed_work_enable_hotplug);
+
+		gpiod_set_value_cansleep(state->reset_gpio, 0);
+	}
+	return 0;
+}
+
+static int adv76xx_resume (struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct v4l2_subdev *sd = i2c_get_clientdata(client);
+	struct adv76xx_state *state = to_state(sd);
+	volatile int pwr_val;
+	int ret = 0;
+	int i;
+
+	if (state->info->type == ADV7680) {
+		/* HW Reset */
+		adv76xx_reset(state);
+
+		/* configure the address of slave maps to IO map */
+		for (i = 1; i < ADV76XX_PAGE_MAX; ++i) {
+			if (!(BIT(i) & state->info->page_mask))
+				continue;
+			if (state->pdata.i2c_addresses[i] == 0)
+				continue;
+
+			io_write(sd, ADV76XX_CLI_START_ADDR + i,
+			         (state->pdata.i2c_addresses[i]) << 1);
+		}
+
+		/* Initialize the core */
+		ret = adv76xx_core_init(sd);
+
+		schedule_delayed_work(&state->delayed_work_enable_hotplug, 0);
+	}
+
+	return ret;
+}
+
+static SIMPLE_DEV_PM_OPS(adv76xx_pm, adv76xx_suspend, adv76xx_resume);
+
 /* ----------------------------------------------------------------------- */
 
 static struct i2c_driver adv76xx_driver = {
 	.driver = {
+		.owner = THIS_MODULE,
 		.name = "adv7604",
 		.of_match_table = of_match_ptr(adv76xx_of_id),
+		.pm = &adv76xx_pm,
 	},
 	.probe = adv76xx_probe,
 	.remove = adv76xx_remove,

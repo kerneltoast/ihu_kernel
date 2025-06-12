@@ -5270,6 +5270,16 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
 	usb_lock_port(port_dev);
 }
 
+#ifdef CONFIG_USB_OC_NOTIFICATION
+static char oc_event[] = "OVERCURRENT=1";
+static char oc_port[10];
+static char *oc_envp[] = {oc_event, oc_port, NULL};
+static char nc_event[] = "OVERCURRENT=0";
+static char nc_port[10];
+static char *nc_envp[] = {nc_event, nc_port, NULL};
+static int oc_flag;
+#endif
+
 static void port_event(struct usb_hub *hub, int port1)
 		__must_hold(&port_dev->status_lock)
 {
@@ -5315,13 +5325,49 @@ static void port_event(struct usb_hub *hub, int port1)
 
 		dev_dbg(&port_dev->dev, "over-current change #%u\n",
 			port_dev->over_current_count);
+#ifdef CONFIG_USB_OC_NOTIFICATION
+		if (oc_flag & BIT(port1 - 1)) {
+			/*
+			 * Send event to userland for overcurrent condition
+			 * change at port with port number.
+			 */
+			snprintf(nc_port, sizeof(nc_port), "NPORT=%d", port1);
+			if (kobject_uevent_env(&hub->intfdev->kobj,
+						KOBJ_CHANGE, nc_envp))
+				dev_err(&port_dev->dev,
+					"failed to send change OC event.\n");
+			/* Clear port's oc_flag. */
+			oc_flag &= ~(BIT(port1 - 1));
+		}
+#endif
 		usb_clear_port_feature(hdev, port1,
 				USB_PORT_FEAT_C_OVER_CURRENT);
 		msleep(100);	/* Cool down */
+#if defined( CONFIG_USB_OC_NO_HUB_POWER_ON )
+/* empty */
+#elif defined ( CONFIG_USB_OC_ONLY_ROOT_HUB_POWER_ON )
+		if (!hdev->parent)
+			hub_power_on(hub, true);
+#else
 		hub_power_on(hub, true);
+#endif
 		hub_port_status(hub, port1, &status, &unused);
-		if (status & USB_PORT_STAT_OVERCURRENT)
+		if (status & USB_PORT_STAT_OVERCURRENT) {
 			dev_err(&port_dev->dev, "over-current condition\n");
+#ifdef CONFIG_USB_OC_NOTIFICATION
+			/*
+			 * Send event to userland for overcurrent condition
+			 * with port number.
+			 */
+			snprintf(oc_port, sizeof(oc_port), "OCPORT=%d", port1);
+			if (kobject_uevent_env(&hub->intfdev->kobj,
+						KOBJ_CHANGE, oc_envp))
+				dev_err(&port_dev->dev,
+					"failed to send OC event.\n");
+			/* Set port's oc_flag. */
+			oc_flag |= BIT(port1 - 1);
+#endif
+		}
 	}
 
 	if (portchange & USB_PORT_STAT_C_RESET) {

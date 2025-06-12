@@ -951,6 +951,9 @@ void xhci_hc_died(struct xhci_hcd *xhci)
 	if (xhci->xhc_state & XHCI_STATE_DYING)
 		return;
 
+	if (kobject_uevent(&(xhci_to_hcd(xhci)->self.controller->kobj), KOBJ_OFFLINE))
+		xhci_err(xhci, "Sending uevent KOBJ_OFFLINE failed\n");
+
 	xhci_err(xhci, "xHCI host controller not responding, assume dead\n");
 	xhci->xhc_state |= XHCI_STATE_DYING;
 

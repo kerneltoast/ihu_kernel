@@ -2286,6 +2286,16 @@ int composite_dev_prepare(struct usb_composite_driver *composite,
 	if (ret)
 		goto fail_dev;
 
+	/*
+	 * If OS descriptors response and buffer are needed they should
+	 * be preallocated in composite_os_desc_req_prepare later on.
+	 * Until they are allocated there cdev->os_desc_req should be set
+	 * to NULL. This ensures that while calling composite_dev_cleanup
+	 * not preceded by composite_os_desc_req_prepare there won't be
+	 * an attempt to free never allocated memory for them.
+	 */
+	cdev->os_desc_req = NULL;
+
 	cdev->req->complete = composite_setup_complete;
 	cdev->req->context = cdev;
 	gadget->ep0->driver_data = cdev;

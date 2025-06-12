@@ -508,6 +508,15 @@ config I2C_DESIGNWARE_SLAVE
 	  This is not a standalone module, this module compiles together with
 	  i2c-designware-core.
 
+config I2C_DESIGNWARE_USE_STATIC_BUS_NUMBERS
+	bool "Use static bus numbers for DesignWare I2C adapter"
+	default n
+	depends on I2C_DESIGNWARE_PLATFORM
+	depends on ACPI
+	help
+	  Use bus numbers defined in i2c-bus-number property instead
+	  of dynamically assigning bus numbers.
+
 config I2C_DESIGNWARE_PCI
 	tristate "Synopsys DesignWare PCI"
 	depends on PCI

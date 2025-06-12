@@ -951,7 +951,6 @@ static int ipc_plat_probe(struct platform_device *pdev)
 	int ret;
 
 	ipcdev.dev = &pdev->dev;
-	ipcdev.irq_mode = IPC_TRIGGER_MODE_IRQ;
 	init_completion(&ipcdev.cmd_complete);
 	spin_lock_init(&ipcdev.gcr_lock);
 

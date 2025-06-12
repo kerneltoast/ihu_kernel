@@ -375,6 +375,11 @@ int dm_read_arg_group(const struct dm_arg *arg, struct dm_arg_set *arg_set,
 const char *dm_shift_arg(struct dm_arg_set *as);
 
 /*
+ * Helper function to parse DM arguments
+ */
+int dm_split_args(int *argc, char ***argvp, char *input);
+
+/*
  * Move through num_args arguments.
  */
 void dm_consume_args(struct dm_arg_set *as, unsigned num_args);
@@ -405,6 +410,12 @@ void dm_set_mdptr(struct mapped_device *md, void *ptr);
 void *dm_get_mdptr(struct mapped_device *md);
 
 /*
+ * Export the device via the ioctl interface (uses mdptr).
+ */
+int dm_ioctl_export(struct mapped_device *md, const char *name,
+		    const char *uuid);
+
+/*
  * A device can still be used while suspended, but I/O is deferred.
  */
 int dm_suspend(struct mapped_device *md, unsigned suspend_flags);
@@ -433,6 +444,13 @@ void dm_remap_zone_report(struct dm_target *ti, struct bio *bio,
 union map_info *dm_get_rq_mapinfo(struct request *rq);
 
 struct queue_limits *dm_get_queue_limits(struct mapped_device *md);
+
+void dm_lock_md_type(struct mapped_device *md);
+void dm_unlock_md_type(struct mapped_device *md);
+void dm_set_md_type(struct mapped_device *md, unsigned type);
+unsigned dm_get_md_type(struct mapped_device *md);
+int dm_setup_md_queue(struct mapped_device *md, struct dm_table *t);
+unsigned dm_table_get_type(struct dm_table *t);
 
 /*
  * Geometry functions.

@@ -53,6 +53,7 @@
 #define FEATURE_8_WAKEUP_FILTERS	(0x01)
 #define FEATURE_PHY_NLP_CROSSOVER	(0x02)
 #define FEATURE_REMOTE_WAKEUP		(0x04)
+#define FEATURE_CARRIER_ALWAYS_ON	(0x08)
 
 #define SUSPEND_SUSPEND0		(0x01)
 #define SUSPEND_SUSPEND1		(0x02)
@@ -81,6 +82,10 @@ struct smsc95xx_priv {
 static bool turbo_mode = true;
 module_param(turbo_mode, bool, 0644);
 MODULE_PARM_DESC(turbo_mode, "Enable multiple frames per Rx transaction");
+
+static char *default_netname = NULL;
+module_param(default_netname, charp, 0);
+MODULE_PARM_DESC(default_netname, "Default interface name (e.g. eth for eth0, eth1, etc.)");
 
 static int __must_check __smsc95xx_read_reg(struct usbnet *dev, u32 index,
 					    u32 *data, int in_pm)
@@ -655,10 +660,14 @@ static void check_carrier(struct work_struct *work)
 	if (pdata->suspend_flags != 0)
 		return;
 
-	ret = smsc95xx_mdio_read(dev->net, dev->mii.phy_id, MII_BMSR);
-	if (ret < 0) {
-		netdev_warn(dev->net, "Failed to read MII_BMSR\n");
-		return;
+	if (pdata->features & FEATURE_CARRIER_ALWAYS_ON)
+		ret = BMSR_LSTATUS;
+	else {
+		ret = smsc95xx_mdio_read(dev->net, dev->mii.phy_id, MII_BMSR);
+		if (ret < 0) {
+			netdev_warn(dev->net, "Failed to read MII_BMSR\n");
+			return;
+		}
 	}
 	if (ret & BMSR_LSTATUS)
 		set_carrier(dev, 1);
@@ -1321,6 +1330,8 @@ static int smsc95xx_bind(struct usbnet *dev, struct usb_interface *intf)
 	else if (val == ID_REV_CHIP_ID_9512_)
 		pdata->features = FEATURE_8_WAKEUP_FILTERS;
 
+	pdata->features |= FEATURE_CARRIER_ALWAYS_ON;
+
 	dev->net->netdev_ops = &smsc95xx_netdev_ops;
 	dev->net->ethtool_ops = &smsc95xx_ethtool_ops;
 	dev->net->flags |= IFF_MULTICAST;
@@ -1332,6 +1343,12 @@ static int smsc95xx_bind(struct usbnet *dev, struct usb_interface *intf)
 	pdata->dev = dev;
 	INIT_DELAYED_WORK(&pdata->carrier_check, check_carrier);
 	schedule_delayed_work(&pdata->carrier_check, CARRIER_CHECK_DELAY);
+
+	/* possibility to override ifname to apix%d */
+	if (NULL != default_netname)
+		scnprintf(dev->net->name, IFNAMSIZ, "%.*s%%d",
+			IFNAMSIZ-3 /* leave room for null term */,
+			default_netname);
 
 	return 0;
 
@@ -1385,17 +1402,22 @@ static int smsc95xx_enable_phy_wakeup_interrupts(struct usbnet *dev, u16 mask)
 
 static int smsc95xx_link_ok_nopm(struct usbnet *dev)
 {
+	struct smsc95xx_priv *pdata = (struct smsc95xx_priv *)(dev->data[0]);
 	struct mii_if_info *mii = &dev->mii;
 	int ret;
 
-	/* first, a dummy read, needed to latch some MII phys */
-	ret = smsc95xx_mdio_read_nopm(dev->net, mii->phy_id, MII_BMSR);
-	if (ret < 0)
-		return ret;
+	if (pdata->features & FEATURE_CARRIER_ALWAYS_ON)
+		ret = BMSR_LSTATUS;
+	else {
+		/* first, a dummy read, needed to latch some MII phys */
+		ret = smsc95xx_mdio_read_nopm(dev->net, mii->phy_id, MII_BMSR);
+		if (ret < 0)
+			return ret;
 
-	ret = smsc95xx_mdio_read_nopm(dev->net, mii->phy_id, MII_BMSR);
-	if (ret < 0)
-		return ret;
+		ret = smsc95xx_mdio_read_nopm(dev->net, mii->phy_id, MII_BMSR);
+		if (ret < 0)
+			return ret;
+	}
 
 	return !!(ret & BMSR_LSTATUS);
 }

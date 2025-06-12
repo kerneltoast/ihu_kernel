@@ -2159,6 +2159,14 @@ static int crlmodule_start_streaming(struct crl_sensor *sensor)
 		return rval;
 	}
 
+#ifdef CONFIG_INTEL_IPU4_ADV7281
+	/*
+	 * Add a delay of 15ms before Power up MIPI CSI-2 Tx on ADV7281.
+	 */
+
+	msleep(15);
+#endif
+
 	/* Write stream on list */
 	rval = crlmodule_write_regs(sensor,
 				   sensor->sensor_ds->streamon_regs,
@@ -2168,14 +2176,40 @@ static int crlmodule_start_streaming(struct crl_sensor *sensor)
 		return rval;
 	}
 
+	if (sensor->sensor_ds->sensor_stream_start) {
+		rval = sensor->sensor_ds->sensor_stream_start(client);
+		if (rval) {
+			dev_err(&client->dev, "%s failed to run sensor specific stream start\n", __func__);
+			return rval;
+		}
+	}
+
 	return 0;
 }
 
 static int crlmodule_stop_streaming(struct crl_sensor *sensor)
 {
-	return crlmodule_write_regs(sensor,
+	struct i2c_client *client = v4l2_get_subdevdata(&sensor->src->sd);
+	int rval;
+
+
+	rval = crlmodule_write_regs(sensor,
 				    sensor->sensor_ds->streamoff_regs,
 				    sensor->sensor_ds->streamoff_regs_items);
+	if (rval) {
+		dev_err(&client->dev, "%s failed to stop stream\n", __func__);
+		return rval;
+	}
+
+	if (sensor->sensor_ds->sensor_stream_stop) {
+		rval = sensor->sensor_ds->sensor_stream_stop(client);
+		if (rval) {
+			dev_err(&client->dev, "%s failed to run sensor specific stream stop\n",	__func__);
+			return rval;
+		}
+	}
+
+	return rval;
 }
 
 static int crlmodule_set_stream(struct v4l2_subdev *subdev, int enable)

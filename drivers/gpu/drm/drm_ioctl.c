@@ -532,6 +532,11 @@ int drm_ioctl_permit(u32 flags, struct drm_file *file_priv)
 	if (unlikely((flags & DRM_ROOT_ONLY) && !capable(CAP_SYS_ADMIN)))
 		return -EACCES;
 
+/*
+ * Temporarily disabled until the DRM Master coordination between VCC's EVS
+ * Hardware service and Intel's Hardware composer is in place (ARTINFO-10454).
+ */
+#if 0
 	/* AUTH is only for authenticated or render client */
 	if (unlikely((flags & DRM_AUTH) && !drm_is_render_client(file_priv) &&
 		     !file_priv->authenticated))
@@ -541,6 +546,7 @@ int drm_ioctl_permit(u32 flags, struct drm_file *file_priv)
 	if (unlikely((flags & DRM_MASTER) &&
 		     !drm_is_current_master(file_priv)))
 		return -EACCES;
+#endif
 
 	/* Render clients must be explicitly allowed */
 	if (unlikely(!(flags & DRM_RENDER_ALLOW) &&

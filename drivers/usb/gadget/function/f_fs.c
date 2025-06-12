@@ -1017,14 +1017,20 @@ static ssize_t ffs_epfile_io(struct file *file, struct ffs_io_data *io_data)
 			interrupted = ep->status < 0;
 		}
 
-		if (interrupted)
+		spin_lock_irq(&epfile->ffs->eps_lock);
+		if (epfile->ep != ep)
+			ret = -ESHUTDOWN;
+		else if (interrupted)
 			ret = -EINTR;
-		else if (io_data->read && ep->status > 0)
+		else if (io_data->read && ep->status > 0) {
+			spin_unlock_irq(&epfile->ffs->eps_lock);
 			ret = __ffs_epfile_read_data(epfile, data, ep->status,
 						     &io_data->data);
+			goto error_mutex;
+		}
 		else
 			ret = ep->status;
-		goto error_mutex;
+		goto error_lock;
 	} else if (!(req = usb_ep_alloc_request(ep->ep, GFP_ATOMIC))) {
 		ret = -ENOMEM;
 	} else {

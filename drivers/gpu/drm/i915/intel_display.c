@@ -48,6 +48,7 @@
 #include <drm/drm_rect.h>
 #include <linux/dma_remapping.h>
 #include <linux/reservation.h>
+#include <drm/drm_panel.h>
 
 #if IS_ENABLED(CONFIG_DRM_I915_GVT)
 #include "gvt.h"
@@ -5472,6 +5473,8 @@ static void intel_encoders_pre_enable(struct drm_crtc *crtc,
 		if (conn_state->crtc != crtc)
 			continue;
 
+		drm_panel_prepare(to_intel_connector(conn)->drm_panel);
+
 		if (encoder->pre_enable)
 			encoder->pre_enable(encoder, crtc_state, conn_state);
 	}
@@ -5494,6 +5497,8 @@ static void intel_encoders_enable(struct drm_crtc *crtc,
 
 		encoder->enable(encoder, crtc_state, conn_state);
 		intel_opregion_notify_encoder(encoder, true);
+
+		drm_panel_enable(to_intel_connector(conn)->drm_panel);
 	}
 }
 
@@ -5511,6 +5516,8 @@ static void intel_encoders_disable(struct drm_crtc *crtc,
 
 		if (old_conn_state->crtc != crtc)
 			continue;
+
+		drm_panel_disable(to_intel_connector(conn)->drm_panel);
 
 		intel_opregion_notify_encoder(encoder, false);
 		encoder->disable(encoder, old_crtc_state, old_conn_state);
@@ -5534,6 +5541,8 @@ static void intel_encoders_post_disable(struct drm_crtc *crtc,
 
 		if (encoder->post_disable)
 			encoder->post_disable(encoder, old_crtc_state, old_conn_state);
+
+		drm_panel_unprepare(to_intel_connector(conn)->drm_panel);
 	}
 }
 

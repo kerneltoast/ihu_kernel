@@ -28,6 +28,8 @@
 #include <linux/errno.h>
 #include <linux/list.h>
 #include <linux/notifier.h>
+#include <linux/kref.h>
+#include <linux/completion.h>
 
 /* A hardware display blank change occurred */
 #define DRM_PANEL_EVENT_BLANK		0x01
@@ -104,6 +106,8 @@ struct drm_panel_funcs {
  * @dev: parent device of the panel
  * @funcs: operations that can be performed on the panel
  * @list: panel entry in registry
+ * @refcount: number of users (the global list is also considered as a user)
+ * @release: set to completed once the panel is not used any more
  */
 struct drm_panel {
 	struct drm_device *drm;
@@ -120,6 +124,8 @@ struct drm_panel {
 	 * panel notifier list head
 	 */
 	struct blocking_notifier_head nh;
+	struct kref refcount;
+	struct completion release;
 };
 
 /**
@@ -227,6 +233,10 @@ int drm_panel_notifier_unregister(struct drm_panel *panel,
 	struct notifier_block *nb);
 int drm_panel_notifier_call_chain(struct drm_panel *panel,
 	unsigned long val, void *v);
+
+struct drm_panel *fw_drm_find_panel(const struct fwnode_handle *fwnode);
+
+void drm_panel_put(struct drm_panel *panel);
 
 #if defined(CONFIG_OF) && defined(CONFIG_DRM_PANEL)
 struct drm_panel *of_drm_find_panel(const struct device_node *np);

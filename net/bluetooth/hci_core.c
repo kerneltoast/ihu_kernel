@@ -46,6 +46,8 @@ static void hci_rx_work(struct work_struct *work);
 static void hci_cmd_work(struct work_struct *work);
 static void hci_tx_work(struct work_struct *work);
 
+static int hdev_unique_id = 0;
+
 /* HCI device list */
 LIST_HEAD(hci_dev_list);
 DEFINE_RWLOCK(hci_dev_list_lock);
@@ -240,6 +242,18 @@ static int amp_init2(struct hci_request *req)
 	return 0;
 }
 
+static int hci_init1_reset_req(struct hci_request *req, unsigned long opt)
+{
+	struct hci_dev *hdev = req->hdev;
+
+	BT_DBG("%s %ld", hdev->name, opt);
+
+	/* Reset */
+	hci_reset_req(req, 0);
+
+	return 0;
+}
+
 static int hci_init1_req(struct hci_request *req, unsigned long opt)
 {
 	struct hci_dev *hdev = req->hdev;
@@ -247,8 +261,10 @@ static int hci_init1_req(struct hci_request *req, unsigned long opt)
 	BT_DBG("%s %ld", hdev->name, opt);
 
 	/* Reset */
+	/* aptiv: moved to hci_init1_reset_req:
 	if (!test_bit(HCI_QUIRK_RESET_ON_CLOSE, &hdev->quirks))
 		hci_reset_req(req, 0);
+	*/
 
 	switch (hdev->dev_type) {
 	case HCI_PRIMARY:
@@ -864,6 +880,15 @@ static int __hci_init(struct hci_dev *hdev)
 {
 	int err;
 
+#define HCI_INIT_TIMEOUT_INIT1_RESET	msecs_to_jiffies(1000)	/* 1 seconds */
+	if (!test_bit(HCI_QUIRK_RESET_ON_CLOSE, &hdev->quirks)) {
+		err = __hci_req_sync(hdev, hci_init1_reset_req, 0, HCI_INIT_TIMEOUT_INIT1_RESET, NULL);
+		if (err < 0) {
+			set_bit(HCI_QUIRK_APTIV_USBTIMEOUT, &hdev->quirks);
+			return err;
+		}
+	}
+
 	err = __hci_req_sync(hdev, hci_init1_req, 0, HCI_INIT_TIMEOUT, NULL);
 	if (err < 0)
 		return err;
@@ -1366,11 +1391,13 @@ done:
 static int hci_dev_do_open(struct hci_dev *hdev)
 {
 	int ret = 0;
+	int retry = 1;
 
 	BT_DBG("%s %p", hdev->name, hdev);
 
 	hci_req_sync_lock(hdev);
 
+retry_once:
 	if (hci_dev_test_flag(hdev, HCI_UNREGISTER)) {
 		ret = -ENODEV;
 		goto done;
@@ -1422,6 +1449,7 @@ static int hci_dev_do_open(struct hci_dev *hdev)
 
 	atomic_set(&hdev->cmd_cnt, 1);
 	set_bit(HCI_INIT, &hdev->flags);
+	clear_bit(HCI_QUIRK_APTIV_USBTIMEOUT, &hdev->quirks);
 
 	if (hci_dev_test_flag(hdev, HCI_SETUP) ||
 	    test_bit(HCI_QUIRK_NON_PERSISTENT_SETUP, &hdev->quirks)) {
@@ -1485,6 +1513,9 @@ static int hci_dev_do_open(struct hci_dev *hdev)
 
 	clear_bit(HCI_INIT, &hdev->flags);
 
+	if (test_bit(HCI_QUIRK_APTIV_EXIT, &hdev->quirks))
+		ret = -EINVAL;
+
 	if (!ret) {
 		hci_dev_hold(hdev);
 		hci_dev_set_flag(hdev, HCI_RPA_EXPIRED);
@@ -1532,6 +1563,15 @@ static int hci_dev_do_open(struct hci_dev *hdev)
 	}
 
 done:
+	/* after cold and warmreset usb layer in occurance 1/1000
+	 * fails to handle reply, reinitialize usb layer (open/close) and redo,
+	 * Flag HCI_QUIRK_APTIV_USBTIMEOUT is set in init1 and csr patching */
+	if (retry && (test_bit(HCI_QUIRK_APTIV_USBTIMEOUT, &hdev->quirks))) {
+		retry = 0;
+		printk(KERN_EMERG ">+> Aptiv retry setup\n");
+		goto retry_once;
+	}
+
 	hci_req_sync_unlock(hdev);
 	return ret;
 }
@@ -2092,6 +2132,9 @@ int hci_get_dev_info(void __user *arg)
 	}
 	di.link_policy = hdev->link_policy;
 	di.link_mode   = hdev->link_mode;
+	di.unique_id   = hdev->unique_id;
+	if (test_bit(HCI_QUIRK_APTIV_PRODUCT1, &hdev->quirks))
+		di.unique_id |= 0x80000000;
 
 	memcpy(&di.stat, &hdev->stat, sizeof(di.stat));
 	memcpy(&di.features, &hdev->features, sizeof(di.features));
@@ -3195,6 +3238,7 @@ int hci_register_dev(struct hci_dev *hdev)
 
 	snprintf(hdev->name, sizeof(hdev->name), "hci%d", id);
 	hdev->id = id;
+	hdev->unique_id = ++hdev_unique_id;
 
 	BT_DBG("%p name %s bus %d", hdev, hdev->name, hdev->bus);
 
@@ -4417,16 +4461,20 @@ static void hci_cmd_work(struct work_struct *work)
 
 		hdev->sent_cmd = skb_clone(skb, GFP_KERNEL);
 		if (hdev->sent_cmd) {
+			BT_DBG("%s cmd sent", hdev->name);
+
 			if (hci_req_status_pend(hdev))
 				hci_dev_set_flag(hdev, HCI_CMD_PENDING);
 			atomic_dec(&hdev->cmd_cnt);
 			hci_send_frame(hdev, skb);
-			if (test_bit(HCI_RESET, &hdev->flags))
+			if (test_bit(HCI_RESET, &hdev->flags)) {
 				cancel_delayed_work(&hdev->cmd_timer);
-			else
+			} else
 				schedule_delayed_work(&hdev->cmd_timer,
 						      HCI_CMD_TIMEOUT);
 		} else {
+			BT_DBG("%s cannot clone", hdev->name);
+
 			skb_queue_head(&hdev->cmd_q, skb);
 			queue_work(hdev->workqueue, &hdev->cmd_work);
 		}

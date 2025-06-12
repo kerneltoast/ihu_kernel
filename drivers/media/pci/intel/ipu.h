@@ -90,7 +90,7 @@ struct ipu_device {
 };
 
 #define IPU_DMA_MASK	39
-#define IPU_LIB_CALL_TIMEOUT_MS		2000
+#define IPU_LIB_CALL_TIMEOUT_MS		200 // ARTINFO-27777: Lower timeout to manage WAM power mode change
 #define IPU_PSYS_CMD_TIMEOUT_MS	2000
 #define IPU_PSYS_OPEN_TIMEOUT_US	   50
 #define IPU_PSYS_OPEN_RETRY (10000 / IPU_PSYS_OPEN_TIMEOUT_US)

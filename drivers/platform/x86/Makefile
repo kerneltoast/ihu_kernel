@@ -101,3 +101,13 @@ obj-$(CONFIG_INTEL_SOCPERF)     += socperf/
 obj-$(CONFIG_INTEL_SOCWATCH_HV) += socwatchhv/
 obj-$(CONFIG_INTEL_SEP)         += sepdk/ socperf/
 obj-$(CONFIG_INTEL_ATOMISP2_PM)	+= intel_atomisp2_pm.o
+
+# SEM board config
+obj-$(CONFIG_APTIV_VGTT_SEM)	+= aptiv_sem_spi.o
+obj-$(CONFIG_APTIV_VGTT_SEM)	+= aptiv_sem_i2c.o
+obj-$(CONFIG_APTIV_VGTT_SEM)	+= aptiv_sem_gpio.o
+
+# IHU board config
+obj-$(CONFIG_APTIV_VCC_IHU)	+= aptiv_ihu_spi.o
+obj-$(CONFIG_APTIV_VCC_IHU)	+= aptiv_ihu_i2c.o
+obj-$(CONFIG_APTIV_VCC_IHU)	+= aptiv_ihu_gpio.o

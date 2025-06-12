@@ -31,7 +31,7 @@ EXPORT_SYMBOL_GPL(__i2c_board_lock);
 LIST_HEAD(__i2c_board_list);
 EXPORT_SYMBOL_GPL(__i2c_board_list);
 
-int __i2c_first_dynamic_bus_num;
+int __i2c_first_dynamic_bus_num = CONFIG_I2C_LAST_STATIC_BUS_NUM + 1;
 EXPORT_SYMBOL_GPL(__i2c_first_dynamic_bus_num);
 
 

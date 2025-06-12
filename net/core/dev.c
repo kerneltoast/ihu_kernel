@@ -9084,6 +9084,20 @@ struct rtnl_link_stats64 *dev_get_stats(struct net_device *dev,
 {
 	const struct net_device_ops *ops = dev->netdev_ops;
 
+	/* A racing condition can exist: when a USB ethernet device is unpluged, dev is freed,
+	 * dev->netdev_ops would contain invalid address pointer. However, the application periodically
+	 * polls the data usage for this ethernet device. And the removal of the device and the access
+	 * of net_device_ops data structure are not synced. Thus, the subsequent access of
+	 * ops->ndo_get_stats64 would cause either a General Protction Fault.
+	 * The following change will check ops. If it is less than 0x1000, this indicates that the dev is
+	 * freed. Instead of causing generl protection fault or kernel null pointer
+	 * access, which would cause of reboot, we will just returned cleared storage.
+	 */
+	if ((u64) ops < 0x1000){
+		memset(storage, 0, sizeof(*storage));
+		netdev_err(dev, "NULL pointer access\n");
+		return storage;
+	}
 	if (ops->ndo_get_stats64) {
 		memset(storage, 0, sizeof(*storage));
 		ops->ndo_get_stats64(dev, storage);

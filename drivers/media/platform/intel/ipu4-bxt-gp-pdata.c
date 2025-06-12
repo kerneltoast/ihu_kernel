@@ -37,6 +37,37 @@
 #define GPIO_BASE		434
 
 
+#ifdef CONFIG_INTEL_IPU4_ADV7281
+
+static struct crlmodule_platform_data adv7281_cvbs_pdata = {
+	.ext_clk = 286363636,
+	.xshutdown = GPIO_BASE + 64, /*dummy for now*/
+	.lanes = 1,
+	.module_name = "ADV7281",
+	.suffix = 'a',
+};
+
+static struct ipu_isys_csi2_config adv7281_cvbs_csi2_cfg	= {
+	.nlanes = 1,
+	.port = 0,
+};
+
+static struct ipu_isys_subdev_info adv7281_cvbs_crl_sd = {
+	.csi2 = &adv7281_cvbs_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			 .type = CRLMODULE_NAME,
+			 .flags = I2C_CLIENT_TEN,
+			 .addr = 0x42,
+			 .platform_data = &adv7281_cvbs_pdata,
+		},
+		.i2c_adapter_id = 1,
+	}
+};
+
+#endif
+#ifdef CONFIG_INTEL_IPU4_ADV7481
+
 static struct crlmodule_platform_data adv7481_cvbs_pdata = {
 	.ext_clk = 286363636,
 	.xshutdown = GPIO_BASE + 64, /*dummy for now*/
@@ -93,7 +124,37 @@ static struct ipu_isys_subdev_info adv7481_hdmi_crl_sd = {
 	}
 };
 
+#endif
+#ifdef CONFIG_INTEL_IPU4_MAX9288
 
+static struct crlmodule_platform_data max9288_pdata = {
+	.ext_clk = 24000000,
+	.op_sys_clock = (uint64_t []){ 445500000 },
+	.xshutdown = GPIO_BASE + 64, /*dummy for now*/
+	.lanes = 4,
+	.module_name = "MAX9288",
+	.suffix = 'a',
+};
+
+static struct ipu_isys_csi2_config max9288_csi2_cfg	= {
+	.nlanes = 4,
+	.port = 0,
+};
+
+static struct ipu_isys_subdev_info max9288_crl_sd = {
+	.csi2 = &max9288_csi2_cfg,
+	.i2c = {
+		.board_info = {
+			 .type = CRLMODULE_NAME,
+			 .flags = I2C_CLIENT_TEN,
+			 .addr = 0x00,
+			 .platform_data = &max9288_pdata,
+		},
+		.i2c_adapter_id = 1,
+	}
+};
+
+#endif
 
 /*
  * Map buttress output sensor clocks to sensors -
@@ -107,8 +168,16 @@ struct ipu_isys_clk_mapping gp_mapping[] = {
 
 static struct ipu_isys_subdev_pdata pdata = {
 	.subdevs = (struct ipu_isys_subdev_info *[]) {
+#ifdef CONFIG_INTEL_IPU4_ADV7481
 		&adv7481_hdmi_crl_sd,
 		&adv7481_cvbs_crl_sd,
+#endif
+#ifdef CONFIG_INTEL_IPU4_ADV7281
+		&adv7281_cvbs_crl_sd,
+#endif
+#ifdef CONFIG_INTEL_IPU4_MAX9288
+		&max9288_crl_sd,
+#endif
 		NULL,
 	},
 	.clk_map = gp_mapping,

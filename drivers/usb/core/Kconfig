@@ -90,3 +90,27 @@ config USB_LEDS_TRIGGER_USBPORT
 	  This driver allows LEDs to be controlled by USB events. Enabling this
 	  trigger allows specifying list of USB ports that should turn on LED
 	  when some USB device gets connected.
+
+config USB_OC_NOTIFICATION
+	bool "Enable USB over-current notification using uevent"
+	default n
+	help
+	  If you say Y here, a notification will be sent to user space
+	  when an over-current condition is detected on an USB port.
+
+config USB_OC_NO_HUB_POWER_ON
+	bool "Enable workaround to NOT power on USB hub ports after over-current condition automatically"
+	depends on USB
+	default n
+	help
+	  If you say Y here, no automatic power on for USB hub ports will be done after over-current condition.
+	  Re-enabling could then be handled in application layer.
+
+config USB_OC_ONLY_ROOT_HUB_POWER_ON
+	bool "Enable workaround to NOT power on EXTERNAL USB hub ports after over-current condition automatically"
+	depends on USB
+	default n
+	help
+	  If you say Y here, no automatic power on for EXTERNAL USB hub ports will be done after over-current condition.
+	  Re-enabling could then be handled in application layer.
+	  Root hub is still handled by the kernel.

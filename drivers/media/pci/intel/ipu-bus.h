@@ -15,6 +15,17 @@
 struct ipu_buttress_ctrl;
 struct ipu_subsystem_trace_config;
 
+/* Allocate 4 buffer of predefined size for ipu_isys_init's queue nr 7 */
+#define VCC_PREALLOC_PAC_BUFFERS 1
+#define VCC_PREALLOC_PAC_BUFFER_COUNT (8)
+#define VCC_PREALLOC_PAC_BUFFER_SIZE (1024 * 768 * 4 + PAGE_SIZE)  /* 3149824 */
+
+struct vcc_prealloc_buf {
+	void *vaddr;
+	dma_addr_t dma_handler;
+	int taken;
+};
+
 struct ipu_bus_device {
 	struct device dev;
 	struct list_head list;
@@ -27,6 +38,10 @@ struct ipu_bus_device {
 	u64 dma_mask;
 	/* Protect runtime_resume calls on the dev */
 	struct mutex resume_lock;
+
+#if VCC_PREALLOC_PAC_BUFFERS
+	struct vcc_prealloc_buf pre[VCC_PREALLOC_PAC_BUFFER_COUNT];
+#endif
 };
 
 #define to_ipu_bus_device(_dev) container_of(_dev, struct ipu_bus_device, dev)

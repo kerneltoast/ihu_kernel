@@ -3096,7 +3096,6 @@ static void intel_connector_info(struct seq_file *m,
 		   connector->base.id, connector->name,
 		   drm_get_connector_status_name(connector->status));
 	if (connector->status == connector_status_connected) {
-		seq_printf(m, "\tname: %s\n", connector->display_info.name);
 		seq_printf(m, "\tphysical dimensions: %dx%dmm\n",
 			   connector->display_info.width_mm,
 			   connector->display_info.height_mm);

@@ -611,7 +611,7 @@ static int intel_hdcp_auth(struct intel_connector *connector)
 
 	/* Wait for R0 ready */
 	if (wait_for(I915_READ(PORT_HDCP_STATUS(port)) &
-		     (HDCP_STATUS_R0_READY | HDCP_STATUS_ENC), 1)) {
+		     HDCP_STATUS_R0_READY, 1)) {
 		DRM_ERROR("Timed out waiting for R0 ready\n");
 		return -ETIMEDOUT;
 	}
@@ -642,7 +642,7 @@ static int intel_hdcp_auth(struct intel_connector *connector)
 
 		/* Wait for Ri prime match */
 		if (!wait_for(I915_READ(PORT_HDCP_STATUS(port)) &
-		    (HDCP_STATUS_RI_MATCH | HDCP_STATUS_ENC), 1))
+		    HDCP_STATUS_RI_MATCH, 1))
 			break;
 	}
 

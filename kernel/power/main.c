@@ -181,6 +181,7 @@ power_attr(mem_sleep);
 
 #ifdef CONFIG_PM_SLEEP_DEBUG
 int pm_test_level = TEST_NONE;
+EXPORT_SYMBOL(pm_test_level);
 
 static const char * const pm_tests[__TEST_AFTER_LAST] = {
 	[TEST_NONE] = "none",

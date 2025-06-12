@@ -1,0 +1,44 @@
+#
+# TOSHIBA_PCIe_EMAC_Driver
+# Release Date: 22 March 2018 Release Version: V_00-08
+#
+
+menuconfig TOSHIBA_PCIE_EMAC
+	tristate "Support for Toshiba PCIE EMAC interfaces"
+	default n
+	help
+	  This driver is from Toshiba for TC9560XBG IC for ethernet and AVB connection.
+
+	  Ethernet AVB bridging solutions for Automotive network.
+
+	  If unsure, say N.
+
+config TOSHIBA_PCIE_EMAC_PTPSUPPORT
+	bool "Enable PTP support"
+	depends on TOSHIBA_PCIE_EMAC
+	default y
+
+config TOSHIBA_PCIE_EMAC_EMULATE_MDIO
+	bool "Emulate a MDIO interface instead of using the real one"
+	depends on TOSHIBA_PCIE_EMAC
+	default n
+
+config TOSHIBA_PCIE_EMAC_DISABLE_MAGIC_PACKET_SUPPORT
+	bool "Disable PMT Magic Packet feature"
+	depends on TOSHIBA_PCIE_EMAC
+	default n
+
+choice
+	prompt "PHY Interface"
+	depends on TOSHIBA_PCIE_EMAC
+	default TOSHIBA_PCIE_EMAC_ENABLE_RGMII_INTERFACE
+	help
+	  Select the interface which should be used between MAC and PHY.
+
+config TOSHIBA_PCIE_EMAC_ENABLE_RMII_INTERFACE
+	bool "RMII interface"
+
+config TOSHIBA_PCIE_EMAC_ENABLE_RGMII_INTERFACE
+	bool "RGMII interface"
+
+endchoice

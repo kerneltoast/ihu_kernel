@@ -424,6 +424,8 @@ struct hci_dev {
 	struct led_trigger	*power_led;
 #endif
 
+	__u32 unique_id;
+
 	int (*open)(struct hci_dev *hdev);
 	int (*close)(struct hci_dev *hdev);
 	int (*flush)(struct hci_dev *hdev);

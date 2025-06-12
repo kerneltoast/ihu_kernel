@@ -566,4 +566,8 @@ config NET_FAILOVER
 	  a VM with direct attached VF by failing over to the paravirtual
 	  datapath when the VF is unplugged.
 
+source "drivers/net/ethswitch/Kconfig"
+
+source "drivers/net/TOSHIBA_PCIe_EMAC_Driver/Kconfig"
+
 endif # NETDEVICES

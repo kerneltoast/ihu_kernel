@@ -18,6 +18,13 @@
 #define TEST_SINGLE_STEP_GET_DEV_DESC		0x0107
 #define TEST_SINGLE_STEP_SET_FEATURE		0x0108
 
+static int disable_port(struct usb_device *hub_udev, u8 portnum)
+{
+	return usb_control_msg(hub_udev, usb_sndctrlpipe(hub_udev, 0),
+		USB_REQ_CLEAR_FEATURE, USB_RT_PORT, USB_PORT_FEAT_ENABLE, portnum,
+		NULL, 0, 1000);
+}
+
 static int ehset_probe(struct usb_interface *intf,
 		       const struct usb_device_id *id)
 {
@@ -27,9 +34,15 @@ static int ehset_probe(struct usb_interface *intf,
 	struct usb_device_descriptor *buf;
 	u8 portnum = dev->portnum;
 	u16 test_pid = le16_to_cpu(dev->descriptor.idProduct);
+	bool root_hub = (hub_udev == dev->bus->root_hub);
 
 	switch (test_pid) {
 	case TEST_SE0_NAK_PID:
+		if(!root_hub) {
+			if ((ret = disable_port(hub_udev, portnum)) < 0)
+				return ret;
+		}
+
 		ret = usb_control_msg(hub_udev, usb_sndctrlpipe(hub_udev, 0),
 					USB_REQ_SET_FEATURE, USB_RT_PORT,
 					USB_PORT_FEAT_TEST,
@@ -37,6 +50,11 @@ static int ehset_probe(struct usb_interface *intf,
 					NULL, 0, 1000);
 		break;
 	case TEST_J_PID:
+		if(!root_hub) {
+			if ((ret = disable_port(hub_udev, portnum)) < 0)
+				return ret;
+		}
+
 		ret = usb_control_msg(hub_udev, usb_sndctrlpipe(hub_udev, 0),
 					USB_REQ_SET_FEATURE, USB_RT_PORT,
 					USB_PORT_FEAT_TEST,
@@ -44,6 +62,11 @@ static int ehset_probe(struct usb_interface *intf,
 					NULL, 0, 1000);
 		break;
 	case TEST_K_PID:
+		if(!root_hub) {
+			if ((ret = disable_port(hub_udev, portnum)) < 0)
+				return ret;
+		}
+
 		ret = usb_control_msg(hub_udev, usb_sndctrlpipe(hub_udev, 0),
 					USB_REQ_SET_FEATURE, USB_RT_PORT,
 					USB_PORT_FEAT_TEST,
@@ -51,6 +74,11 @@ static int ehset_probe(struct usb_interface *intf,
 					NULL, 0, 1000);
 		break;
 	case TEST_PACKET_PID:
+		if(!root_hub) {
+			if ((ret = disable_port(hub_udev, portnum)) < 0)
+				return ret;
+		}
+
 		ret = usb_control_msg(hub_udev, usb_sndctrlpipe(hub_udev, 0),
 					USB_REQ_SET_FEATURE, USB_RT_PORT,
 					USB_PORT_FEAT_TEST,

@@ -1260,6 +1260,54 @@ config INTEL_ATOMISP2_PM
 	  To compile this driver as a module, choose M here: the module
 	  will be called intel_atomisp2_pm.
 
+choice
+	bool "Aptiv Platform"
+	optional
+	---help---
+	  Select Aptiv Platform Target (if applicable).
+
+	config APTIV_VCC_IHU
+		bool "Aptiv VCC IHU Platform"
+		depends on SPI
+		depends on I2C
+		depends on MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS
+		depends on GPIOLIB
+		---help---
+		  This provides platform configuration for Aptiv VCC IHU hardware.
+
+	config APTIV_VGTT_SEM
+		bool "Aptiv VGTT SEM Platform"
+		depends on SPI
+		depends on I2C
+		depends on MFD_INTEL_LPSS_PCI_USE_STATIC_I2C_BUS_NUMBERS
+		depends on GPIOLIB
+		---help---
+		  This provides platform configuration for Aptiv VGTT SEM hardware.
+
+endchoice
+
+menu "Delphi VGTT SEM Platform options"
+	depends on APTIV_VGTT_SEM
+
+	config DELPHI_LVDS_VIRT_I2C_BUS_NUM
+		int "LVDS Virtual I2C Bus Number"
+		default 8
+		range 0 I2C_LAST_STATIC_BUS_NUM
+		help
+		  The number defined here will be used to create a virtual
+		  I2C adapter for communication to the connected serializer or
+		  deserializer.
+
+	config DELPHI_LVDS_VIRT_I2C_REMOTE_BUS_NUM
+		int "LVDS Virtual I2C Remote Bus Number"
+		default 9
+		range 0 I2C_LAST_STATIC_BUS_NUM
+		help
+		  The number defined here will be used to create a virtual
+		  I2C adapter for communication to remote devices across the
+		  LVDS link.
+endmenu
+
 endif # X86_PLATFORM_DEVICES
 
 config PMC_ATOM

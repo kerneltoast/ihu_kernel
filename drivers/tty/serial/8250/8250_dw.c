@@ -21,9 +21,11 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/acpi.h>
+#include <linux/pci.h>
 #include <linux/clk.h>
 #include <linux/reset.h>
 #include <linux/pm_runtime.h>
+#include <linux/console.h>
 
 #include <asm/byteorder.h>
 
@@ -293,6 +295,19 @@ static int dw8250_handle_irq(struct uart_port *p)
 	return 0;
 }
 
+static int dw8250_thre_mode_startup(struct uart_port *port)
+{
+	struct uart_8250_port *up = up_to_u8250p(port);
+	int ret;
+
+	ret = serial8250_do_startup(port);
+
+	if (!ret)
+		up->ier |= 0x80;   /* Enable THRE Interrupt Mode */
+
+	return ret;
+}
+
 static void
 dw8250_do_pm(struct uart_port *port, unsigned int state, unsigned int old)
 {
@@ -480,7 +495,12 @@ static void dw8250_setup_port(struct uart_port *p)
 
 	/* Select the type based on fifo */
 	if (reg & DW_UART_CPR_FIFO_MODE) {
-		p->type = PORT_16550A;
+		if (device_property_read_bool(p->dev, "use-thre-mode")) {
+			p->startup = dw8250_thre_mode_startup;
+			p->type = PORT_16550A_DW;
+		} else {
+			p->type = PORT_16550A;
+		}
 		p->flags |= UPF_FIXED_TYPE;
 		p->fifosize = DW_UART_CPR_FIFO_SIZE(reg);
 		up->capabilities = UART_CAP_FIFO;
@@ -693,6 +713,20 @@ static int dw8250_remove(struct platform_device *pdev)
 static int dw8250_suspend(struct device *dev)
 {
 	struct dw8250_data *data = dev_get_drvdata(dev);
+
+	/*
+	 * FIXME: For Platforms with LPSS PCI UARTs, the parent device should
+	 * be prevented from going into D3 for the no_console_suspend flag to
+	 * work as expected.
+	 */
+	if (platform_get_resource_byname(to_platform_device(dev),
+					 IORESOURCE_MEM, "lpss_dev")) {
+		struct uart_8250_port *up = serial8250_get_port(data->line);
+		struct pci_dev *pdev = to_pci_dev(dev->parent);
+
+		if (pdev && !console_suspend_enabled && uart_console(&up->port))
+			pdev->dev_flags |= PCI_DEV_FLAGS_NO_D3;
+	}
 
 	serial8250_suspend_port(data->line);
 

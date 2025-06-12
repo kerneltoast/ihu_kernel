@@ -1667,6 +1667,9 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 			goto free_card;
 	}
 
+        /*Added 10ms delay to avoid CMD8 timeouts*/
+        mmc_delay(10);
+
 	if (!oldcard) {
 		/* Read extended CSD. */
 		err = mmc_read_ext_csd(card);
@@ -1953,12 +1956,19 @@ static int mmc_poweroff_notify(struct mmc_card *card, unsigned int notify_type)
 	if (notify_type == EXT_CSD_POWER_OFF_LONG)
 		timeout = card->ext_csd.power_off_longtime;
 
+	pr_info("%s: Sending Power Off Notification ...\n",
+		mmc_hostname(card->host));
+
 	err = __mmc_switch(card, EXT_CSD_CMD_SET_NORMAL,
 			EXT_CSD_POWER_OFF_NOTIFICATION,
 			notify_type, timeout, 0, true, false, false);
-	if (err)
+	if (err) {
 		pr_err("%s: Power Off Notification timed out, %u\n",
 		       mmc_hostname(card->host), timeout);
+	} else {
+		pr_info("%s: Power Off Notification sent\n",
+			mmc_hostname(card->host));
+	}
 
 	/* Disable the power off notification after the switch operation. */
 	card->ext_csd.power_off_notification = EXT_CSD_NO_POWER_NOTIFICATION;
@@ -2162,14 +2172,14 @@ static int _mmc_hw_reset(struct mmc_host *host)
 {
 	struct mmc_card *card = host->card;
 
-	/*
-	 * In the case of recovery, we can't expect flushing the cache to work
-	 * always, but we have a go and ignore errors.
-	 */
-	mmc_flush_cache(host->card);
 
 	if ((host->caps & MMC_CAP_HW_RESET) && host->ops->hw_reset &&
 	     mmc_can_reset(card)) {
+		/*
+		* In the case of recovery, we can't expect flushing the cache to work
+		* always, but we have a go and ignore errors.
+		*/
+		mmc_flush_cache(host->card);
 		/* If the card accept RST_n signal, send it. */
 		mmc_set_clock(host, host->f_init);
 		host->ops->hw_reset(host);

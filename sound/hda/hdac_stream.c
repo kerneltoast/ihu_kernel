@@ -426,6 +426,12 @@ int snd_hdac_stream_setup_periods(struct hdac_stream *azx_dev)
 	} else
 		return -EINVAL;
 
+	// printk(KERN_ERR "xxx: %s:%d substream %s rt %px dma_buffer %px\n", __func__, __LINE__, substream->name, runtime, dma_buffer_p);
+	if (!dma_buffer_p) {
+		printk(KERN_ERR "xxx: dma_puffer_p NULL!\n");
+		return -ENXIO;
+	}
+
 	/* reset BDL address */
 	snd_hdac_stream_writel(azx_dev, SD_BDLPL, 0);
 	snd_hdac_stream_writel(azx_dev, SD_BDLPU, 0);

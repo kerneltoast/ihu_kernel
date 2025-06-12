@@ -19,6 +19,7 @@ al	Annapurna Labs
 allo	Allo.com
 allwinner	Allwinner Technology Co., Ltd.
 alphascale	AlphaScale Integrated Circuits Systems, Inc.
+alpine	Alpine Electronics
 altr	Altera Corp.
 amarula	Amarula Solutions
 amazon	Amazon.com, Inc.

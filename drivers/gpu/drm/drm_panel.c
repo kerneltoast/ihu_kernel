@@ -49,6 +49,7 @@ void drm_panel_init(struct drm_panel *panel)
 {
 	INIT_LIST_HEAD(&panel->list);
 	BLOCKING_INIT_NOTIFIER_HEAD(&panel->nh);
+	init_completion(&panel->release);
 }
 EXPORT_SYMBOL(drm_panel_init);
 
@@ -64,12 +65,21 @@ EXPORT_SYMBOL(drm_panel_init);
 int drm_panel_add(struct drm_panel *panel)
 {
 	mutex_lock(&panel_lock);
+	kref_init(&panel->refcount);
 	list_add_tail(&panel->list, &panel_list);
 	mutex_unlock(&panel_lock);
 
 	return 0;
 }
 EXPORT_SYMBOL(drm_panel_add);
+
+static void drm_panel_release(struct kref *kref)
+{
+	struct drm_panel *panel =
+		container_of(kref, struct drm_panel, refcount);
+
+	complete(&panel->release);
+}
 
 /**
  * drm_panel_remove - remove a panel from the global registry
@@ -81,7 +91,11 @@ void drm_panel_remove(struct drm_panel *panel)
 {
 	mutex_lock(&panel_lock);
 	list_del_init(&panel->list);
+	kref_put(&panel->refcount, drm_panel_release);
 	mutex_unlock(&panel_lock);
+
+	wait_for_completion(&panel->release);
+	reinit_completion(&panel->release);
 }
 EXPORT_SYMBOL(drm_panel_remove);
 
@@ -132,6 +146,56 @@ int drm_panel_detach(struct drm_panel *panel)
 	return 0;
 }
 EXPORT_SYMBOL(drm_panel_detach);
+
+/**
+ * fw_drm_find_panel - look up a panel using a firmware node
+ * @fwnode: firmware node of the panel
+ *
+ * Searches the set of registered panels for one that matches the given firmware
+ * node. If a matching panel is found, return a pointer to it.
+ * A drm_panel obtained with this function needs to be released with
+ * drm_panel_put() once it is not used any more.
+ *
+ * Return: A pointer to the panel registered for the specified firmware
+ * node or an ERR_PTR() if no panel matching the firmware node can be found.
+ * Possible error codes returned by this function:
+ * - EPROBE_DEFER: the panel device has not been probed yet, and the caller
+ *   should retry later
+ * - ENODEV: the device is not available
+ */
+struct drm_panel *fw_drm_find_panel(const struct fwnode_handle *fwnode)
+{
+	struct drm_panel *panel;
+
+	if (!fwnode_device_is_available(fwnode))
+		return ERR_PTR(-ENODEV);
+
+	mutex_lock(&panel_lock);
+
+	list_for_each_entry(panel, &panel_list, list) {
+		if (dev_fwnode(panel->dev) == fwnode) {
+			kref_get(&panel->refcount);
+			mutex_unlock(&panel_lock);
+			return panel;
+		}
+	}
+
+	mutex_unlock(&panel_lock);
+	return ERR_PTR(-EPROBE_DEFER);
+}
+EXPORT_SYMBOL(fw_drm_find_panel);
+
+/**
+ * drm_panel_put - release a panel looked up before
+ * @panel: panel to release
+ */
+void drm_panel_put(struct drm_panel *panel)
+{
+	mutex_lock(&panel_lock);
+	kref_put(&panel->refcount, drm_panel_release);
+	mutex_unlock(&panel_lock);
+}
+EXPORT_SYMBOL(drm_panel_put);
 
 #ifdef CONFIG_OF
 /**

@@ -745,6 +745,10 @@ static int byt_emmc_probe_slot(struct sdhci_pci_slot *slot)
 				 MMC_CAP_HW_RESET | MMC_CAP_1_8V_DDR |
 				 MMC_CAP_CMD_DURING_TFR |
 				 MMC_CAP_WAIT_WHILE_BUSY;
+#ifdef CONFIG_MMC_SDHCI_PCI_USE_FULL_PWR_CYCLE
+	pr_debug("using MMC_CAP2_FULL_PWR_CYCLE\n");
+	slot->host->mmc->caps2 |= MMC_CAP2_FULL_PWR_CYCLE;
+#endif
 	slot->hw_reset = sdhci_pci_int_hw_reset;
 	if (slot->chip->pdev->device == PCI_DEVICE_ID_INTEL_BSW_EMMC)
 		slot->host->timeout_clk = 1000; /* 1000 kHz i.e. 1 MHz */
@@ -943,6 +947,10 @@ static int byt_sdio_probe_slot(struct sdhci_pci_slot *slot)
 	byt_probe_slot(slot);
 	slot->host->mmc->caps |= MMC_CAP_POWER_OFF_CARD | MMC_CAP_NONREMOVABLE |
 				 MMC_CAP_WAIT_WHILE_BUSY;
+#ifdef CONFIG_MMC_SDHCI_PCI_USE_FULL_PWR_CYCLE
+	pr_debug("using MMC_CAP2_FULL_PWR_CYCLE\n");
+	slot->host->mmc->caps2 |= MMC_CAP2_FULL_PWR_CYCLE;
+#endif
 	return 0;
 }
 

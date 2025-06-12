@@ -766,10 +766,14 @@ void hci_sock_dev_event(struct hci_dev *hdev, int event)
 		/* Wake up sockets using this dead device */
 		read_lock(&hci_sk_list.lock);
 		sk_for_each(sk, &hci_sk_list.head) {
+			local_bh_disable();
+			bh_lock_sock_nested(sk);
 			if (hci_pi(sk)->hdev == hdev) {
 				sk->sk_err = EPIPE;
 				sk->sk_state_change(sk);
 			}
+			bh_unlock_sock(sk);
+			local_bh_enable();
 		}
 		read_unlock(&hci_sk_list.lock);
 	}
